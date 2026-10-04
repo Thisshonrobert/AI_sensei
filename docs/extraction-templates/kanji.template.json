@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "content_type": "kanji",
+  "source": {
+    "book_id": "REPLACE_WITH_STABLE_BOOK_ID",
+    "book_title": "REPLACE_WITH_BOOK_TITLE",
+    "file_name": "REPLACE_WITH_ORIGINAL_PDF_FILENAME"
+  },
+  "pdf_pages_processed": [1],
+  "unreadable_pdf_pages": [],
+  "entries": [
+    {
+      "character": "学",
+      "meanings": ["study", "learning"],
+      "on_readings": ["ガク"],
+      "kun_readings": ["まな.ぶ"],
+      "stroke_count": 8,
+      "radical": null,
+      "jlpt_level": null,
+      "chapter": null,
+      "source_pdf_pages": [1],
+      "source_printed_pages": [],
+      "example_words": [
+        {
+          "word": "学校",
+          "reading": "がっこう",
+          "meanings": ["school"],
+          "source_pdf_pages": [1]
+        }
+      ],
+      "notes": null,
+      "review_status": "unreviewed",
+      "issues": []
+    }
+  ]
+}

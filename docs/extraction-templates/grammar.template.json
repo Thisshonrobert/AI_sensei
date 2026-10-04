@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "content_type": "grammar",
+  "source": {
+    "book_id": "REPLACE_WITH_STABLE_BOOK_ID",
+    "book_title": "REPLACE_WITH_BOOK_TITLE",
+    "file_name": "REPLACE_WITH_ORIGINAL_PDF_FILENAME"
+  },
+  "batch": {
+    "batch_id": "grammar_lesson_01",
+    "lesson_key": "lesson_01",
+    "lesson_number": 1,
+    "lesson_title": null,
+    "expected_grammar_count": null,
+    "expected_question_count": null
+  },
+  "pdf_pages_processed": [1],
+  "unreadable_pdf_pages": [],
+  "entries": [
+    {
+      "source_record_key": "lesson_01/grammar_01",
+      "pattern": "〜たい",
+      "meanings": ["want to do"],
+      "formation": ["Verb masu-stem + たい"],
+      "explanation": null,
+      "usage_notes": null,
+      "jlpt_level": null,
+      "chapter": null,
+      "source_pdf_pages": [1],
+      "source_printed_pages": [],
+      "examples": [
+        {
+          "japanese": "日本に行きたいです。",
+          "reading": null,
+          "translation": "I want to go to Japan.",
+          "source_pdf_pages": [1]
+        }
+      ],
+      "review_status": "unreviewed",
+      "issues": []
+    }
+  ],
+  "exercise_passages": [],
+  "lesson_questions": [
+    {
+      "source_record_key": "lesson_01/exercise_01/question_01",
+      "question_number": "1",
+      "exercise_section": null,
+      "origin": "book",
+      "instructions": null,
+      "prompt": "日本に（　）です。",
+      "format": "multiple_choice",
+      "options": [
+        { "label": "1", "text": "行きたい" },
+        { "label": "2", "text": "行くたい" }
+      ],
+      "parent_passage_key": null,
+      "target_grammar_keys": [],
+      "answer_specification": null,
+      "source_pdf_pages": [1],
+      "source_printed_pages": [],
+      "review_status": "unreviewed",
+      "issues": ["Illustrative question only; replace with source content. No answer key supplied."]
+    }
+  ]
+}

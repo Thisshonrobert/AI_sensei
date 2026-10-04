@@ -1,0 +1,36 @@
+# Private source material, extraction data, and learner backups/history
+/private-data/
+*.pdf
+*.dump
+*.sql
+
+# Secrets: retain only deliberately sanitized examples
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local engineering notes
+/.local/
+
+# Future application/tool output
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+*.log
+
+# Graphify machine-local caches; curated milestone outputs may be tracked
+/graphify-out/.graphify*
+/graphify-out/.needs_update
+/graphify-out/cost.json
+
+# Editor/OS local files
+.DS_Store
+Thumbs.db
+Desktop.ini

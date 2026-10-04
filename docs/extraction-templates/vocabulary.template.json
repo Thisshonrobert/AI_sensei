@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "content_type": "vocabulary",
+  "source": {
+    "book_id": "REPLACE_WITH_STABLE_BOOK_ID",
+    "book_title": "REPLACE_WITH_BOOK_TITLE",
+    "file_name": "REPLACE_WITH_ORIGINAL_PDF_FILENAME"
+  },
+  "pdf_pages_processed": [1],
+  "unreadable_pdf_pages": [],
+  "entries": [
+    {
+      "word": "学校",
+      "reading": "がっこう",
+      "meanings": ["school"],
+      "parts_of_speech": ["noun"],
+      "jlpt_level": null,
+      "chapter": null,
+      "source_pdf_pages": [1],
+      "source_printed_pages": [],
+      "examples": [
+        {
+          "japanese": "学校に行きます。",
+          "reading": null,
+          "translation": "I go to school.",
+          "source_pdf_pages": [1]
+        }
+      ],
+      "notes": null,
+      "review_status": "unreviewed",
+      "issues": []
+    }
+  ]
+}
