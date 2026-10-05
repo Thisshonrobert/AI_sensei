@@ -3,6 +3,7 @@
 *.pdf
 *.dump
 *.sql
+!/prisma/migrations/**/migration.sql
 
 # Secrets: retain only deliberately sanitized examples
 .env

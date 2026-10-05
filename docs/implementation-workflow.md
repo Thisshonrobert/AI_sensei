@@ -1,6 +1,6 @@
 # Implementation workflow
 
-Authority: Master Plan §§16–19. Current state is a documentation scaffold with existing extraction templates/reference/inspection inputs. **No application phase is claimed complete.**
+Authority: Master Plan §§16–19. Current state includes documentation, local Docker PostgreSQL, and minimal Source/ImportBatch staging tooling for the supplied JSON batches. Existing templates/reference/inspection inputs remain. **No application phase is claimed complete:** verified canonical import and item/source pages are still pending.
 
 ## Ordered delivery
 

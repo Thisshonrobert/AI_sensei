@@ -26,7 +26,7 @@ See [docs/repository-structure.md](docs/repository-structure.md) for current fol
 - `src/app/` — future Next.js pages and feature mutations.
 - `src/components/` — shared UI only when actual screens need it.
 - `src/lib/server/` — server modules; begin with `content/` for verified import. Review, assessment, and generation arrive in their respective phases.
-- `prisma/` — actual schema/migrations begin in phase 1; no speculative schema in this scaffold.
+- `prisma/` — minimal Source/ImportBatch staging schema/migration; canonical learning and later-feature tables arrive with verified workflows.
 - `scripts/` — bounded local import/backup utilities as their phases require them.
 - `tests/` — focused unit, PostgreSQL integration, and study/resume browser checks as behavior exists.
 - `docs/` — engineering guidance, existing illustrative extraction templates, and private-use UI references.
@@ -54,7 +54,7 @@ The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/arc
 
 ## Tooling & Verification
 
-Read [docs/tooling_Verification.md](docs/tooling_Verification.md). This scaffold has no installed application dependencies, package scripts, migrations, or executable application. Do not claim a build, lint, type check, or application test passed until its real command runs.
+Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL Compose and minimal Prisma/Zod staging-import tools are now present. There is no Next.js application, review scheduler, or study UI yet. Do not claim a build, lint, type check, or application test passed until its real command runs. Sanitized batches remain unreviewed until human source comparison; staging is not canonical promotion.
 
 Prefix shell commands with `rtk`, using `rtk proxy` for commands without a suitable filter, as required by the user-provided RTK instructions. Never expose database credentials, API keys, raw books, or learner history in command output.
 

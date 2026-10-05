@@ -6,14 +6,18 @@ Authority: Master Plan §§2, 16, 18. Folder names are engineering organization 
 AI_sensei/
 ├── AGENTS.md
 ├── README.md
+├── compose.yaml                # User-selected local PostgreSQL container
+├── .env.example                # Sanitized configuration example; .env ignored
+├── package.json                # Minimal npm Prisma/Zod import tooling
+├── package-lock.json           # Exact installed tooling dependency graph
 ├── FINALIZED_PROJECT_PLAN.md
 ├── src/
 │   ├── app/                    # Next.js screens/mutations in phase 1
 │   ├── components/             # UI shared by actual features
 │   └── lib/server/content/     # Content identity, validation, local import
-├── prisma/                     # Schema and migrations in phase 1
-├── scripts/                    # Actual import/backup utilities as needed
-├── tests/fixtures/             # Small synthetic or permitted fixtures
+├── prisma/                     # Source/ImportBatch schema and staging migration
+├── scripts/import-batches.mjs  # Sanitize and load unreviewed JSON batches
+├── tests/                      # Node staging sanitizer checks and fixtures
 ├── docs/
 │   ├── architecture.md
 │   ├── repository-structure.md
@@ -21,6 +25,7 @@ AI_sensei/
 │   ├── documentation.md
 │   ├── graphify.md
 │   ├── implementation-workflow.md
+│   ├── database-import.md
 │   ├── extraction-templates/   # Existing illustrative JSON/prompt
 │   └── references/             # Existing Satori reading-layout reference
 └── private-data/               # Entire tree ignored
@@ -31,7 +36,7 @@ AI_sensei/
     └── inspection/             # Existing private inspection images
 ```
 
-Small README placeholders keep source/prisma/script/test folders visible in Git. They are not executable implementation.
+Small README placeholders keep deferred UI folders visible in Git. Prisma, scripts and tests now contain staging implementation; this does not establish the canonical importer or complete phase 1.
 
 ## Add only with working behavior
 
