@@ -19,3 +19,24 @@ test('explicit source-specific identity, sense and POS required; JSON approved s
  assert.throws(()=>validateSelection({batchId:'00000000-0000-4000-8000-000000000001',records:[{recordKey:'one',family:'entry',printedPage:null,pdfPageIndex:null,identityVerified:true,sourceVerified:false}]}),/validation/i);
  assert.notEqual(approvalToken('a','key','hash'),approvalToken('a','other','hash'));
 });
+
+test('acceptance basis and unresolved supplementary decisions are preserved in the approval hash', () => {
+ const input={batchId:'00000000-0000-4000-8000-000000000001',records:[{recordKey:'one',family:'entry',printedPage:null,pdfPageIndex:null,identityVerified:true,sourceVerified:true,reviewBasis:'user_accepted_without_pdf_comparison',additions:[{key:'reading',origin:'generated',payload:{reading:'test',uncertainty:['name reading unresolved']},unresolved:true,citations:[]}]}]};
+ const parsed=validateSelection(input);
+ assert.equal(parsed.records[0].reviewBasis,'user_accepted_without_pdf_comparison');
+ assert.equal(parsed.records[0].additions[0].unresolved,true);
+ const changed=structuredClone(parsed);changed.records[0].additions[0].unresolved=false;
+ assert.notEqual(hashJson(parsed),hashJson(changed));
+ assert.throws(()=>validateSelection({...input,records:[{...input.records[0],additions:[{...input.records[0].additions[0],origin:'book'}]}]}),/validation/);
+});
+
+test('human answer-text check and intentional grammar deferral are explicit hashed decisions', () => {
+ const record={recordKey:'q',family:'question',printedPage:null,pdfPageIndex:null,identityVerified:true,sourceVerified:true,answerVerified:false,targetsVerified:false,targets:[],questionReview:{sourceAnswerTextVerified:true,grammarConnections:'intentionally_deferred',usage:'reference_only'}};
+ const input={batchId:'00000000-0000-4000-8000-000000000001',records:[record]};
+ const parsed=validateSelection(input);
+ assert.deepEqual(parsed.records[0].questionReview,record.questionReview);
+ const changed=structuredClone(parsed);changed.records[0].questionReview.sourceAnswerTextVerified=false;
+ assert.notEqual(hashJson(parsed),hashJson(changed));
+ assert.throws(()=>validateSelection({...input,records:[{...record,targetsVerified:true}]}),/deferred/i);
+ assert.throws(()=>validateSelection({...input,records:[{...record,family:'entry'}]}),/question/i);
+});

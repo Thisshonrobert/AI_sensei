@@ -1,3 +1,3 @@
 # Shared UI
 
-Add components only when approved screens need reuse. Follow the dashboard, grammar reveal/comparison, and reader behavior in Master Plan §§7, 10, 20. This folder currently contains no UI implementation.
+`reference.tsx` provides shared item links, field facts, origin labels, citations, content blocks and pagination for the Phase-1 reference pages. Book, separately cited dictionary, generated and user origins remain explicit; uncertain additions and questions show draft status. Dashboard, scheduled recall and interactive-reader components remain deferred to their approved phases.

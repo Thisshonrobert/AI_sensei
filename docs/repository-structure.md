@@ -8,16 +8,16 @@ AI_sensei/
 ├── README.md
 ├── compose.yaml                # User-selected local PostgreSQL container
 ├── .env.example                # Sanitized configuration example; .env ignored
-├── package.json                # Minimal npm Prisma/Zod import tooling
-├── package-lock.json           # Exact installed tooling dependency graph
+├── package.json                # Bun-managed app/import tooling (Node runtime)
+├── bun.lock                    # Exact tooling dependency graph
 ├── FINALIZED_PROJECT_PLAN.md
 ├── src/
-│   ├── app/                    # Next.js screens/mutations in phase 1
+│   ├── app/                    # Read-only Next.js reference/item/source screens
 │   ├── components/             # UI shared by actual features
 │   └── lib/server/content/     # Content identity, validation, local import
 ├── prisma/                     # Staging + bounded canonical content/provenance migrations
 ├── scripts/import-batches.mjs  # Sanitize and load unreviewed JSON batches
-├── tests/                      # Node unit + isolated PostgreSQL canonical checks
+├── tests/                      # Node unit, isolated PostgreSQL and reference-browser checks
 ├── docs/
 │   ├── architecture.md
 │   ├── repository-structure.md
@@ -36,7 +36,7 @@ AI_sensei/
     └── inspection/             # Existing private inspection images
 ```
 
-Small README placeholders keep deferred UI folders visible in Git. Prisma, scripts and tests now contain staging and bounded canonical import implementation. `scripts/canonical-import.mjs` exposes local review/promotion commands; `scripts/test-canonical-postgres.mjs` isolates synthetic verification. Item/source pages and real human-approved pilot promotion remain phase-1 gaps.
+`src/app/` now implements reference lists, item details and source details, plus loading/error/not-found states. `src/components/reference.tsx` contains shared provenance/reference UI. `src/lib/server/db.ts` is server-only; content/catalog modules retrieve bounded explicit records. Prisma and scripts retain staging/canonical import; tests include Node, isolated PostgreSQL and production-browser checks. Exact authorized real promotion is complete under acceptance without PDF comparison; physical PDF intake/transcription remains unverified. No later-phase modules were prebuilt.
 
 ## Add only with working behavior
 

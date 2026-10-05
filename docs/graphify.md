@@ -4,7 +4,7 @@ Graphify is an **optional engineering navigation index** over permitted code/doc
 
 ## Current status and cadence
 
-No engineering graph exists in this scaffold and none was generated. **Graphify required: no** for this initial documentation/directory task.
+No engineering graph has been generated. **Graphify required: yes, pending integration** for the completed Phase 1 canonical-import/reference-app milestone. The user must first integrate the intended phase bundle and confirm the default branch is clean and up to date. The current dirty checkout is not an indexing target. Routine content/display follow-ups and this documentation update do not require separate graph refreshes.
 
 Refresh when a major implemented architectural boundary changes or a substantial implementation phase is complete and integrated. Small edits, comment-only changes, and routine documentation updates do not require refresh. A graph never replaces the Master Plan or current files; check source locations and freshness when using it.
 

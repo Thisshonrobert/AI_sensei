@@ -18,6 +18,44 @@ async function approve(selection) {
  for(const r of p.records) await recordApproval(db,selection,r.recordKey,r.confirmationToken,'synthetic-test-reviewer');
  return p;
 }
+
+test('accepted extraction and separate generated/dictionary additions retain honest provenance and draft status', {skip:!enabled}, async()=>{
+ const a=await fixture('kanji',{character:'値'});
+ a.records[0].typed.glyph='値';a.records[0].match.canonicalKey='値';
+ a.records[0].reviewBasis='user_accepted_without_pdf_comparison';
+ const citation={sourceId:randomUUID(),sourceTitle:'Synthetic dictionary',sourceUrl:'https://example.org/dictionary',sourceRecordKey:'value',originalPayloadJson:{evidence:'synthetic'},fieldPresence:{meanings:'supplied'},printedPage:null,pdfPageIndex:null};
+ const source=await db.importBatch.findUnique({where:{id:a.batchId}});
+ await db.source.update({where:{id:source.sourceId},data:{edition:null}});
+ a.records[0].additions=[{key:'meaning',origin:'user',payload:{selectedMeanings:['synthetic value'],uncertainty:[]},unresolved:false,citations:[citation]},{key:'reading',origin:'generated',payload:{reading:'uncertain',uncertainty:['ambiguous name']},unresolved:true,citations:[citation]}];
+ const preview=await approve(a);
+ const changed=structuredClone(a);changed.records[0].additions[0].payload.selectedMeanings=['changed'];
+ await assert.rejects(()=>promote(db,changed),/approval/);
+ await promote(db,a);
+ const receipt=await db.sourceEntry.findFirst({where:{importBatchId:a.batchId,sourceRecordKey:'entry-1'}});
+ assert.equal(receipt.fieldPresenceJson.reviewBasis,'user_accepted_without_pdf_comparison');
+ const additions=await db.content.findMany({where:{items:{some:{itemId:receipt.itemId}},kind:'explanation'},include:{sourceEntries:true}});
+ assert.equal(additions.length,2);
+ assert.equal(additions.find(c=>c.origin==='generated').status,'draft');
+ assert.equal(additions.find(c=>c.origin==='user').sourceEntries.length,2);
+ assert.equal(preview.records[0].review.decision.reviewBasis,'user_accepted_without_pdf_comparison');
+ const before=await db.content.count();assert.equal((await promote(db,a)).promoted,0);assert.equal(await db.content.count(),before);
+ const invalid=structuredClone(a);invalid.records[0].additions[1].unresolved=false;
+ await assert.rejects(()=>previewPromotion(db,invalid),/new draft|Uncertain/);
+ const correction=await fixture('kanji',{character:'値'},source.sourceId);
+ correction.records[0]={...structuredClone(a.records[0]),match:{mode:'reuse',itemId:receipt.itemId,expectedRevision:1}};
+ correction.records[0].additions[0].payload.selectedMeanings=['corrected value'];
+ await approve(correction);await promote(db,correction);
+ const revisions=await db.content.findMany({where:{kind:'explanation',items:{some:{itemId:receipt.itemId}}}});
+ assert.equal(revisions.length,4);assert.equal(revisions.filter(c=>c.revision===2&&c.supersedesId).length,2);
+ assert.equal((await promote(db,correction)).promoted,0);
+ const without=await fixture('kanji',{character:'値'},source.sourceId);
+ without.records[0]=structuredClone(correction.records[0]);without.records[0].additions[1].citations=[];
+ await approve(without);await promote(db,without);
+ const restored=await fixture('kanji',{character:'値'},source.sourceId);
+ restored.records[0]=structuredClone(correction.records[0]);
+ await approve(restored);await promote(db,restored);
+ assert.equal((await promote(db,restored)).promoted,0);
+});
 test('real PostgreSQL: partial approved promotion, repeat no-op, exact kanji reuse/two citations, immutable revisions', {skip:!enabled}, async()=>{
  const a=await fixture('kanji',{example_words:[{word:'実験',reading:'じっけん',meanings:['test experiment'],source_pdf_pages:[2]}]});
  await assert.rejects(()=>promote(db,a),/approval/i);
@@ -27,14 +65,16 @@ test('real PostgreSQL: partial approved promotion, repeat no-op, exact kanji reu
  const exampleEvidence=await db.sourceEntry.findFirst({where:{importBatchId:a.batchId,sourceRecordKey:'entry-1/example/1'}});
  assert.equal(exampleEvidence.pdfPageIndex,null);
  assert.deepEqual(exampleEvidence.originalPayloadJson.source_pdf_pages,[2]);
+ const committedBefore=await db.importBatch.findUnique({where:{id:a.batchId}});
  assert.equal((await promote(db,a)).promoted,0);
+ assert.equal((await db.importBatch.findUnique({where:{id:a.batchId}})).committedAt?.toISOString(),committedBefore.committedAt?.toISOString());
  const item=await db.item.findUnique({where:{kind_canonicalKey:{kind:'kanji',canonicalKey:'実'}}});
  const b=await fixture();
  const auto=await approve(b); assert.equal(auto.records[0].review.resolvedMode,'reuse');
  await promote(db,b);
  assert.equal(await db.sourceEntry.count({where:{itemId:item.id}}),2);
  assert.equal(await db.kanji.count({where:{glyph:'実'}}),1);
- assert.equal(await db.content.count(),2); // one retained source-word per citation
+ assert.equal(await db.content.count({where:{items:{some:{itemId:item.id}},kind:'sentence'}}),2); // one retained source-word per citation
  await assert.rejects(()=>db.sourceEntry.updateMany({where:{itemId:item.id},data:{printedPage:'999'}}));
  const c=await fixture('kanji',{meanings:['corrected']},(await db.importBatch.findUnique({where:{id:a.batchId}})).sourceId);
  c.records[0].typed.meaningsJson=['corrected'];
@@ -89,12 +129,32 @@ test('unresolved questions stay draft, partial batch stays partial, verified dep
  await db.importBatch.update({where:{id:a.batchId},data:{stagedJson:{...batch.stagedJson,lesson_questions:[q]}}});
  await approve(a); await promote(db,a);
  assert.equal((await db.importBatch.findUnique({where:{id:a.batchId}})).status,'partial');
- const onlyQ={batchId:a.batchId,records:[{recordKey:'q-1',family:'question',printedPage:'1',pdfPageIndex:0,identityVerified:true,sourceVerified:true,targets:[],answerVerified:false,targetsVerified:false}]};
+ const onlyQ={batchId:a.batchId,records:[{recordKey:'q-1',family:'question',printedPage:'1',pdfPageIndex:0,identityVerified:true,sourceVerified:true,targets:[],answerVerified:false,targetsVerified:false,additions:[{key:'translation',origin:'generated',payload:{translation:'Synthetic draft translation',uncertainty:['answer conflict']},unresolved:true,citations:[]}]}]};
  await approve(onlyQ); await promote(db,onlyQ);
  const content=await db.content.findFirst({where:{kind:'question',sourceEntries:{some:{importBatchId:a.batchId}}}});
  assert.equal(content.status,'draft');
+ assert.equal(await db.content.count({where:{parentContentId:content.id,kind:'explanation',status:'draft'}}),1);
  assert.equal(await db.content.count({where:{kind:'question',status:'approved'}}),0);
  assert.equal((await db.importBatch.findUnique({where:{id:a.batchId}})).status,'partial');
+});
+
+test('corrected answer text and human grammar deferral retain immutable ungraded history', {skip:!enabled}, async()=>{
+ const a=await fixture('vocabulary',{word:'試験',reading:'しけん',pos:'noun',sense:'exam',meanings:['exam']});
+ const original=await db.importBatch.findUnique({where:{id:a.batchId}});
+ const q={source_record_key:'checked-q',prompt:'Synthetic checked question?',format:'multiple_choice',options:[{label:'a',text:'A'}],answer_specification:{source_answer_text:'corrected source answer',correct_option_labels:['a']},origin:'book'};
+ await db.importBatch.update({where:{id:a.batchId},data:{stagedJson:{...original.stagedJson,lesson_questions:[{...q,answer_specification:{...q.answer_specification,source_answer_text:'prior source answer'}}]}}});
+ const record={recordKey:'checked-q',family:'question',printedPage:null,pdfPageIndex:null,identityVerified:true,sourceVerified:true,targets:[],answerVerified:false,targetsVerified:false};
+ const first={batchId:a.batchId,records:[record]};await approve(first);await promote(db,first);
+ const old=await db.content.findFirst({where:{kind:'question',sourceEntries:{some:{importBatchId:a.batchId}}}});
+ const b=await db.importBatch.create({data:{sourceId:original.sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'synthetic-correction',schemaVersion:1,status:'draft',stagedJson:{...original.stagedJson,lesson_questions:[q]},validationErrorsJson:[]}});
+ const correction={batchId:b.id,records:[{...record,questionReview:{sourceAnswerTextVerified:true,grammarConnections:'intentionally_deferred',usage:'reference_only'}}]};
+ await approve(correction);await promote(db,correction);assert.equal((await promote(db,correction)).promoted,0);
+ const next=await db.content.findUnique({where:{supersedesId:old.id}});
+ assert.equal(next.status,'draft');assert.equal(next.payloadJson.questionReview.sourceAnswerTextVerified,true);
+ assert.equal(next.payloadJson.questionReview.grammarConnections,'intentionally_deferred');
+ assert.equal(next.payloadJson.answer_specification.source_answer_text,q.answer_specification.source_answer_text);
+ assert.equal((await db.content.findUnique({where:{id:old.id}})).payloadJson.answer_specification.source_answer_text,'prior source answer');
+ assert.equal(await db.contentItem.count({where:{contentId:next.id,role:'target'}}),0);
 });
 
 test('grammar construction identities, verified dependency questions, corrections and origin restrictions', {skip:!enabled}, async()=>{

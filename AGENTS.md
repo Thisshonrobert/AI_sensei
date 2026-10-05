@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Execution requirements
+
+These requirements summarize the detailed rules below; they do not replace the Master Plan.
+
+1. Agents **MUST** read the relevant sections and amendments of [FINALIZED_PROJECT_PLAN.md](FINALIZED_PROJECT_PLAN.md) before making architectural or feature decisions, and identify the current phase's scope and acceptance gate.
+2. Agents **MUST NOT** implement features outside that approved scope or introduce dependencies without approval.
+3. Agents **MUST NOT** execute or suggest broad staging (including `git add .`) or force pushes. Git mutations remain manual unless the user explicitly authorizes the specific action; preserve unrelated edits.
+4. Agents **MUST** run the actual verification commands and inspect their output before claiming build, lint, typecheck, test, or browser checks passed. Report checks not run as unverified; documentation edits do not establish application phase completion.
+5. Agents **MUST** prefix shell commands with `rtk`, use Bun for package management/scripts and Node for server/database/import execution, and keep credentials, API keys, private book data, and learner history out of command output. See [Tooling & Verification](#tooling--verification) for the existing command conventions.
+6. After completing each phase, agents **MUST** provide the exact scoped `rtk git add -- <path>...` command and a suggested commit subject in the final handoff without waiting for the user to ask. Include implementation/documentation paths, exclusions, actual verification results, and `Graphify required: yes/no` with any integration prerequisite. Providing commands does not authorize executing Git mutations.
+
 ## Project Overview
 
 Build a private, single-user Japanese JLPT N2 study application. The goal is efficient exam preparation through verified Nihongo no Mori content, manageable recall, timed reading, and external listening—not learning software development.
@@ -14,7 +25,7 @@ The approved stack is Next.js, React, TypeScript, Tailwind, PostgreSQL, Prisma, 
 - Use simple, readable, testable code; follow existing conventions and avoid unrelated refactoring.
 - Implement one verified vertical slice at a time in the Master Plan's phase order. Do not prebuild later features.
 - Keep database, scheduler, and Japanese analysis on the Node server runtime. Choose route handlers or server actions consistently within each feature; do not duplicate mutations across both.
-- Retrieve bounded, explicit records through SQL. AI produces drafts; it cannot write textbook facts, approve content, or update scheduling state.
+- Application data retrieval **MUST** use bounded, explicit records through SQL (including Prisma queries). Application AI is draft-only: it **MUST NOT** write canonical textbook facts, approve content, or update scheduling state. AI-assisted extraction may produce unverified source drafts; it does not establish their correctness or authorize promotion.
 - Preserve source evidence, missing fields, accepted alternatives, and uncertainty. Fluent output is not verification.
 - Check the relevant phase gate and invariant before changing content identity, review transactions, eligibility, or publication.
 
@@ -23,7 +34,7 @@ The approved stack is Next.js, React, TypeScript, Tailwind, PostgreSQL, Prisma, 
 See [docs/repository-structure.md](docs/repository-structure.md) for current folders and deferred module boundaries.
 
 - `FINALIZED_PROJECT_PLAN.md` — authoritative specification; retain its location and amendments.
-- `src/app/` — future Next.js pages and feature mutations.
+- `src/app/` — read-only Next.js reference/item/source pages; feature mutations arrive in their phases.
 - `src/components/` — shared UI only when actual screens need it.
 - `src/lib/server/` — server modules; begin with `content/` for verified import. Review, assessment, and generation arrive in their respective phases.
 - `prisma/` — Source/ImportBatch staging and bounded canonical content/provenance migrations; learner and later-feature tables remain deferred.
@@ -42,7 +53,7 @@ The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/arc
 2. One canonical Item has one matching typed Vocabulary/Kanji/Grammar row. Source relationships preserve edition/page provenance; do not merge vocabulary solely by spelling or English gloss.
 3. Content uses one kind-discriminated table with explicit book/generated/user origin. Source evidence and approved content revisions are immutable; corrections preserve historical prompts and attempts.
 4. One Card measures one stable recall objective. Vocabulary requires **reading plus selected meaning** with one rating/state; either failure means Again. Core kanji meaning and source-backed whole-word contextual reading have separate states. Missing context blocks the reading card. Incidental kanji cards remain opt-in.
-5. Relationships never propagate ratings. Practice, reading aids, explanations, tests, AI feedback, and dictionary lookups do not update FSRS in V1.
+5. Relationships **MUST NOT** propagate ratings. Practice, reading aids, explanations, tests, AI feedback, and dictionary lookups **MUST NOT** update FSRS in V1.
 6. A review atomically writes Attempt, immutable ReviewLog, and Card state. Event IDs are idempotent; stale state versions conflict. Store complete library state/log, configuration, version, and prompt snapshots.
 7. Initial daily ceilings are five vocabulary, two core-kanji objective cards, one grammar card, and eight total. Backlog can pause introductions. Sibling burying changes presentation eligibility, not due dates or another card's state.
 8. Scored tests use approved questions and introduced/learner-enabled baseline targets; unseen N2 is excluded. Selection and timed deadlines survive refresh. Short valid tests beat fabricated quotas.
@@ -50,11 +61,13 @@ The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/arc
 10. AI is optional, on demand, bounded, and draft-only. Human approval precedes reusable publication; accepted answers/rubrics precede scored/scheduled questions. No paid fallback; generation failure leaves review available.
 11. Reading/dashboard/grammar additions reuse existing records. No per-tap AI, separate reader scheduler, extra comparison tables, or analytics service. Span offsets are revision-bound half-open UTF-16 indices, including valid surrogate boundaries.
 12. Localhost and server-only secrets are defaults. Protect local mutations from cross-origin requests, enforce ownership, and test backup restoration before relying on irreplaceable history. Internet deployment requires one-user authentication/authorization first.
-13. No V1 microservices, message broker, LangGraph, autonomous study agents, pgvector/vector or graph database, custom SRS, or custom Japanese parser. Engineering Graphify is an optional index, not a learner-data system.
+13. V1 **MUST NOT** introduce microservices, a message broker, LangGraph, autonomous study agents, pgvector/vector or graph databases, a custom SRS, or a custom Japanese parser. Engineering Graphify is an optional index, not a learner-data system.
 
 ## Tooling & Verification
 
-Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod staging and bounded canonical-import tools are present, with explicit record/hash approval and isolated synthetic PostgreSQL verification. Real batches remain unreviewed/unpromoted. There is no Next.js application, review scheduler, or study UI yet. Do not claim a build, lint, type check, or application test passed until its real command runs. Sanitized batches remain unreviewed until human source comparison; staging is not canonical promotion.
+Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod staging, canonical import and a read-only Next.js reference application are present. Three real batches were explicitly accepted without PDF comparison and promoted with exact record/hash approvals; source transcription is not independently verified. Draft questions/additions remain unresolved. There is no review scheduler or study-session UI. Do not claim build/lint/typecheck/browser checks passed until their real commands run. Future sanitized batches remain unapproved until their own human decisions; this acceptance is limited to the existing three batches.
+
+Use Bun as the primary package manager/script runner (`packageManager` and `bun.lock`); retain Node for database/import/server execution. Use `rtk bun run test` for the existing Node suite, not bare `bun test`.
 
 Prefix shell commands with `rtk`, using `rtk proxy` for commands without a suitable filter, as required by the user-provided RTK instructions. Never expose database credentials, API keys, raw books, or learner history in command output.
 
@@ -89,7 +102,7 @@ These are engineering handoff conventions, not application services or new archi
 
 - Default: the user stages, commits, pushes, merges, switches branches, and pulls. This scaffold adds no automatic phase scripts, PR automation, heartbeat, or direct-to-main push policy.
 - Inspect changes read-only; preserve existing edits. At handoff, list exact paths as `Implementation`, `Documentation`, and `Excluded or uncertain`, plus verification evidence and unresolved issues.
-- Provide an exact `git add -- <path>...` suggestion for the intended bundle and a commit subject. Never suggest `git add .` or broad dirty-directory staging. Include the Master Plan/existing references only if the user intends them in that commit; do not silently absorb previously untracked files.
+- At every completed phase, provide an exact `rtk git add -- <path>...` command for the intended bundle and a commit subject in both the phase handoff document and the final response. Do this automatically as part of completion reporting; the user executes the commands unless they explicitly authorize Git mutations. Never suggest `git add .` or broad dirty-directory staging. Include the Master Plan/existing references only if the user intends them in that commit; do not silently absorb previously untracked files. Disclose shared files containing authorized preparation for a later phase rather than silently presenting them as phase-only changes.
 - State `Graphify required: yes/no` under the milestone policy. When yes, wait for confirmation that the phase is integrated and the default branch is clean/up to date before regeneration. Hand off exact generated paths separately.
 - An Antigravity brief identifies the plan sections, exact docs to edit, verified behavior/checks, remaining gaps, and files to exclude. Prepare the brief here; sending it to another chat requires user authorization.
 - Explicit user authorization for a Git action takes precedence over these defaults. Never force push or include unrelated/private files implicitly.

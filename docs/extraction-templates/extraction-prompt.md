@@ -4,23 +4,35 @@ The three template JSON files contain illustrative examples, not extracted book 
 
 ## Reusable prompt
 
-Copy the following prompt and provide the corresponding JSON template plus your PDF excerpt or extracted text. Fill in the source details and page mapping yourself.
+Copy the following prompt and provide the corresponding JSON template plus your PDF excerpt or extracted text. The following book identities are fixed across the user's split batches; only the excerpt filename and batch coverage change. Edition/year/ISBN are unknown, not inferred from the publisher or language.
+
+| Content type | Fixed book title | Edition description supplied by user | Edition year / ISBN |
+|---|---|---|---|
+| Vocabulary | JLPT N2 FAST PASS 合格単語 Vocabulary | Japanese edition, Nihongo no Mori | Unknown |
+| Kanji | おいしい かんじ N2 | Japanese edition, Nihongo no Mori | Unknown |
+| Grammar | JLPT_N2 この一冊で合格する | Japanese edition, Nihongo no Mori | Unknown |
+
+Use excerpt-local PDF viewer positions (first page = 1) for these split batches, and preserve printed/main-book page labels separately. Main-book page labels do not establish positions in the unsplit PDF file. No full-PDF offset calculation is required when unknown; keep it unknown. These references make later source checks/corrections possible.
 
 ```text
 Extract the supplied Japanese learning material into valid JSON using the exact structure of the attached template.
 
 Content type: [vocabulary / kanji / grammar]
 Book ID: [stable ID; reuse it for all batches of this book]
-Book title: [title]
-Original PDF filename: [filename]
-Original PDF pages supplied: [e.g. 21, 22, 23, 24, 25]
-Page mapping: [if this is a split PDF, excerpt page 1 = original PDF page 21]
+Book title: [choose the fixed title above for the content type; reuse across batches]
+Edition description: Japanese edition, Nihongo no Mori
+Edition year / ISBN: unknown unless subsequently supplied by the user
+PDF filename: [current excerpt filename; changes for each split batch]
+PDF page reference frame: excerpt-local, one-based
+Excerpt PDF pages supplied: [e.g. 1, 2, 3, 4, 5]
+Printed/main-book page labels: [copy visible labels; unknown if not visible]
+Unsplit PDF page positions: unknown unless explicitly supplied; do not infer from printed pages
 Output filename: [e.g. grammar_lesson_01.json or vocab_batch_001.json]
 For grammar only:
 Lesson key/number/title: [e.g. lesson_01 / 1 / exact source title]
 Batch ID: [e.g. grammar_lesson_01; add _part_01 only if splitting a lesson]
 Expected grammar points/questions: [counts if known; otherwise null]
-Answer-key pages supplied: [original PDF pages, or none]
+Answer-key pages supplied: [excerpt-local PDF pages, or none]
 
 Rules:
 1. Replace all illustrative entries from the template. Extract only content actually present in the supplied material. Do not use your own knowledge to fill gaps or generate examples, translations, readings, stroke counts, radicals, or JLPT levels.
@@ -28,7 +40,7 @@ Rules:
 3. Missing scalar values must be null, not empty strings or the string "null". Missing collections must be []. Keep multiple readings, meanings, examples, and formations as separate array items.
 4. Keep Japanese text in Japanese. Preserve kana, kanji variants, okurigana notation, punctuation, and meaningful distinctions. Remove only obvious formatting noise and repeated headers/footers. Do not apply aggressive character normalization.
 5. Do not mix furigana with the word, character, or pattern. Put an unambiguous full reading in reading; otherwise use null and record the ambiguity in issues. Preserve on/kun readings as printed.
-6. Use original PDF page positions, starting at 1, in all source_pdf_pages fields. pdf_pages_processed must list the original PDF pages inspected in this batch. Keep printed page labels, when visible, as strings in source_printed_pages. Do not invent page numbers.
+6. For the user's split batches, use excerpt-local PDF page positions, starting at 1, in all source_pdf_pages fields. pdf_pages_processed must list the excerpt pages inspected in this batch. Preserve the reference frame in an existing source note/issue field permitted by the attached template; do not add incompatible keys. Keep printed page labels, when visible or explicitly supplied by the user, as strings in source_printed_pages. Do not invent page numbers or assume printed pages equal unsplit PDF positions. For nested examples, record their own pages even if different from the entry page.
 7. Each vocabulary entry describes a word and its reading; each kanji entry describes one character; each grammar entry describes one pattern. Keep distinct readings or grammar usages separate when the source distinguishes them. Do not collapse entries merely because their written forms match.
 8. Copy examples, translations, explanations, and notes only where supplied by the source. Do not translate or summarize them during extraction. Include source_pdf_pages for examples and example_words.
 9. jlpt_level must be null or one of N1, N2, N3, N4, N5. Set it only when explicitly established by the supplied source or book metadata provided above. Do not guess.
@@ -46,7 +58,7 @@ Rules:
 
 ## Saving and importing
 
-- Save each completed response as a UTF-8 .json file, one content type per batch: vocab_batch_001.json, kanji_lesson_01.json, grammar_lesson_01.json. Keep original PDF page references inside the JSON regardless of filenames. Large lessons may be split into _part_01 and _part_02 without changing their lesson/source record keys.
+- Save each completed response as a UTF-8 .json file, one content type per batch: vocab_batch_001.json, kanji_lesson_01.json, grammar_lesson_01.json. Keep excerpt filename, excerpt-local PDF references and separate printed page labels regardless of output filenames. Large lessons may be split into _part_01 and _part_02 without changing their lesson/source record keys.
 - Validate JSON syntax, keys, field types, source page coverage, and entry counts. Compare a sample with the original PDF and inspect all reported issues. Keep original PDFs and raw extraction separately.
 - Use the same book_id across batches. At import, assign database IDs and use a stable source locator or entry fingerprint to prevent repeat imports. Do not deduplicate solely by word or kanji character: readings and source-specific information can differ.
 - Import each entries item as a staging record, retaining the batch's source metadata. PostgreSQL jsonb is suitable for the structured payload. Map approved records into the existing application tables.

@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+@theme { --color-ink: #252923; --color-paper: #f6f3eb; --color-accent: #a63827; }
+:root { background: #f6f3eb; color: #252923; font-family: 'Segoe UI', sans-serif; font-size: 17px; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: #8c3023; text-underline-offset: .22em; }
+a:hover { text-decoration: underline; }
+button, input { font: inherit; }
+button { background: #293a31; color: #fff; padding: .65rem 1.2rem; border-radius: 3px; cursor: pointer; }
+input { background: #fffdf8; color: #252923; border: 1px solid #a4a99b; border-radius: 3px; padding: .65rem; width: 100%; min-width: 0; }
+:focus-visible { outline: 3px solid #a63827; outline-offset: 4px; }
+.skip { position: fixed; top: -100px; left: 1rem; z-index: 20; background: white; padding: .7rem; }
+.skip:focus { top: 1rem; }
+.site-header { max-width: 1200px; margin: auto; padding: 1.8rem 2rem; border-bottom: 1px solid #cdd0c3; display: flex; justify-content: space-between; align-items: center; gap: 2rem; }
+.brand { display: flex; align-items: center; gap: .85rem; color: #252923; text-decoration: none; font-size: 1.35rem; }
+.brand > span:first-child { border: 1px solid #a63827; color: #a63827; padding: .4rem; font-family: 'Yu Mincho', serif; }
+.brand small { display: block; font-size: .6rem; letter-spacing: .16em; margin-top: .2rem; }
+.site-header nav { display: flex; flex-wrap: wrap; gap: 1.5rem; font-size: .85rem; }
+main { max-width: 1100px; min-height: 65vh; margin: 0 auto; padding: 3.5rem 2rem; outline: none; }
+h1 { font-family: Georgia, 'Yu Mincho', serif; font-size: clamp(2.1rem, 4.2vw, 3.4rem); line-height: 1.2; margin: .65rem 0 1rem; font-weight: 500; overflow-wrap: anywhere; }
+h2 { font-family: Georgia, 'Yu Mincho', serif; font-size: 1.4rem; margin: 1.4rem 0 .7rem; }
+p { line-height: 1.7; margin: .65rem 0; overflow-wrap: anywhere; }
+.eyebrow { color: #69705d; font-size: .7rem; letter-spacing: .13em; text-transform: uppercase; }
+.lead { max-width: 700px; font-size: 1.1rem; color: #5a6254; }
+.japanese { font-family: 'Yu Mincho', 'Noto Serif CJK JP', 'MS Mincho', serif; line-height: 1.85; overflow-wrap: anywhere; white-space: pre-wrap; }
+.item-title { font-size: clamp(2.8rem, 6vw, 4.5rem); line-height: 1.4; }
+.shelf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin: 2.7rem 0; border-top: 2px solid #344639; border-bottom: 1px solid #cdd0c3; }
+.shelf-section { color: #252923; padding: 1.4rem 1.8rem 1.6rem; border-right: 1px solid #cdd0c3; text-decoration: none; }
+.shelf-section:last-child { border: 0; }.shelf-section:hover { background: #edeedd; text-decoration: none; }
+.shelf-number { color: #69705d; font-size: .75rem; display: block; }
+.shelf-japanese { font-family: 'Yu Mincho', serif; color: #344639; font-size: 3.3rem; display: block; margin-top: .3rem; }
+.shelf-section h2 { margin: .2rem 0; }.shelf-section p, .shelf-section > span:last-child { font-size: .85rem; }
+.notice { border-left: 3px solid #a63827; background: #eee9dc; padding: .85rem 1.1rem; font-size: .9rem; line-height: 1.7; margin: 1rem 0; }
+.search { max-width: 620px; margin: 1.8rem 0; }.search label { display: block; font-size: .85rem; margin-bottom: .4rem; }
+.entry-list, .source-list, .citations { list-style: none; padding: 0; }
+.entry-list li { border-top: 1px solid #cdd0c3; }
+.entry-link { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; align-items: baseline; gap: 1rem; padding: .9rem .3rem; color: #252923; text-decoration: none; }
+.entry-link:hover { background: #edeedd; }.entry-link .japanese { font-size: 1.5rem; }.entry-link > span:last-child { color: #505c4d; overflow-wrap: anywhere; }.reading { color: #505c4d; }
+.pagination { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; font-size: .85rem; }
+.facts { border-top: 1px solid #cdd0c3; margin: 1.5rem 0 2rem; }.fact { display: grid; grid-template-columns: 190px 1fr; gap: 1rem; border-bottom: 1px solid #cdd0c3; padding: 1rem 0; }.fact dt { font-size: .85rem; color: #69705d; }.fact dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.badge { display: inline-block; padding: .1rem .45rem; background: #dfe5d8; color: #294130; border: 1px solid #b8c5b1; font-size: .7rem; border-radius: 2px; white-space: nowrap; }.badge.generated { background: #f2dccd; color: #782b1c; border-color: #cfa58f; }
+.citations { font-size: .8rem; }.citations li { padding: .4rem 0; }.locator, .muted, .status, .field-label { color: #626959; }.acceptance { color: #8c3023; font-size: .75rem; margin: .15rem 0; }.status, .field-label { font-size: .8rem; }
+.content-block { margin: 1.2rem 0; padding: 1.25rem; background: #fffdf8; border: 1px solid #d4d5c8; }.content-block.draft { border-left: 3px solid #a63827; }.sentence { font-size: 1.25rem; }.content-block ol { padding-left: 1.5rem; }
+details { margin-top: .8rem; }summary { color: #8c3023; cursor: pointer; font-size: .8rem; }.back { font-size: .85rem; display: block; margin-bottom: 1.3rem; }
+.source-list li, .source-record { padding: 1.5rem 0; border-top: 1px solid #cdd0c3; }.source-list h2 { margin: .5rem 0; }.empty { padding: 2rem 0; }.source-record { scroll-margin-top: 1rem; }
+footer { max-width: 1200px; margin: auto; padding: 1.5rem 2rem; color: #69705d; border-top: 1px solid #cdd0c3; font-size: .75rem; }
+@media (max-width: 650px) { .site-header { align-items: flex-start; flex-direction: column; padding: 1.2rem; gap: 1rem; }.site-header nav { gap: 1rem; }main { padding: 2rem 1.2rem; }.shelf { grid-template-columns: 1fr; }.shelf-section { border-right: 0; border-bottom: 1px solid #cdd0c3; }.shelf-japanese { font-size: 2.5rem; }.entry-link { grid-template-columns: 1fr; gap: .2rem; }.fact { grid-template-columns: 1fr; gap: .3rem; }.pagination { flex-wrap: wrap; }.content-block { padding: .9rem; } }

@@ -1,6 +1,6 @@
 # Implementation workflow
 
-Authority: Master Plan §§16–19. Current state includes documentation, local Docker PostgreSQL, and minimal Source/ImportBatch staging tooling for the supplied JSON batches. Existing templates/reference/inspection inputs remain. **No application phase is claimed complete:** verified canonical import and item/source pages are still pending.
+Authority: Master Plan §§16–19. Current state includes local Docker PostgreSQL, staging/canonical import and read-only item/source pages. The three existing batches were explicitly accepted without PDF comparison and promoted; independent PDF inventory/transcription acceptance remains unverified. See [Phase 1 handoff](phase-1-handoff.md) for verified technical behavior and exact pending gates. Existing templates/reference/inspection inputs remain; phase 2 has not started.
 
 ## Ordered delivery
 

@@ -13,6 +13,7 @@ const contentSchemas={
  question:z.object({prompt:text,format:z.enum(['multiple_choice','fill_in_blank','sentence_ordering','short_answer','other']),options:z.array(z.object({label:text,text:text}).passthrough()).max(100),answer_specification:z.record(z.unknown()).nullable().optional(),answerVerified:z.boolean(),targetsVerified:z.boolean()}).passthrough(),
 };
 const citation=z.object({sourceId:uuid,sourceTitle:text.optional(),sourceUrl:z.string().url().regex(/^https?:\/\//).optional(),sourceRecordKey:text,originalPayloadJson:z.record(z.unknown()),fieldPresence:z.record(z.enum(['supplied','not_supplied','unknown'])),printedPage:z.string().nullable(),pdfPageIndex:z.number().int().nonnegative().nullable()}).strict();
+const addition=z.object({key:text,origin:z.enum(['generated','user']),payload:z.record(z.unknown()),unresolved:z.boolean(),citations:z.array(citation).max(100)}).strict();
 const record=z.object({
  recordKey:text,family:z.enum(['entry','question','passage']),printedPage:z.string().nullable(),pdfPageIndex:z.number().int().nonnegative().nullable(),
  identityVerified:z.literal(true),sourceVerified:z.literal(true),
@@ -22,6 +23,9 @@ const record=z.object({
  kanjiLinks:z.array(z.object({kanjiItemId:uuid,occurrencesJson:z.array(z.record(z.unknown()))}).strict()).max(100).default([]),
  targets:z.array(z.object({itemId:uuid.optional(),recordKey:text.optional()}).strict()).max(100).default([]),
  answerVerified:z.boolean().default(false),targetsVerified:z.boolean().default(false),
+ reviewBasis:z.enum(['source_compared','user_accepted_without_pdf_comparison']).optional(),
+ questionReview:z.object({sourceAnswerTextVerified:z.boolean(),grammarConnections:z.literal('intentionally_deferred'),usage:z.literal('reference_only')}).strict().optional(),
+ additions:z.array(addition).max(100).optional(),
 }).strict();
 const selectionSchema=z.object({batchId:uuid,records:z.array(record).min(1).max(1000)}).strict();
 export function validateSelection(input) {
@@ -29,6 +33,10 @@ export function validateSelection(input) {
  if(!parsed.success) throw new Error('Selection validation failed: '+parsed.error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; '));
  const s=parsed.data;
  if(new Set(s.records.map(r=>r.recordKey)).size!==s.records.length) throw new Error('Duplicate selection record keys');
+ for(const r of s.records)if(r.questionReview){
+  if(r.family!=='question')throw new Error('Question review decision requires a question record');
+  if(r.targetsVerified||r.targets.length)throw new Error('Intentionally deferred grammar connections cannot be verified targets');
+ }
  return s;
 }
 function sorted(value) {
@@ -67,7 +75,7 @@ async function reviewRecord(tx,batch,r,selection,seen=new Set()) {
  const raw=rawRecord(batch,r);
  const source=await tx.source.findUnique({where:{id:batch.sourceId}});
  const context={source:batch.stagedJson.source,lesson:batch.stagedJson.batch||null,pageRange:batch.pageRangeJson,schemaVersion:batch.schemaVersion,extractorVersion:batch.extractorVersion};
- if(source?.sourceType!=='book'||!source.edition)throw new Error('Confirmed book edition required before approval');
+ if(source?.sourceType!=='book'||(!source.edition&&r.reviewBasis!=='user_accepted_without_pdf_comparison'))throw new Error('Confirmed book edition required before approval');
  const checkOrigin=value=>{
   if(!value||typeof value!=='object')return;
   if(value.origin&&value.origin!=='book')throw new Error('Book importer rejects generated/user origin; retain as separate assistance');
@@ -113,11 +121,18 @@ async function reviewRecord(tx,batch,r,selection,seen=new Set()) {
   provenance[ref]=hashJson(e);
  }
  const citations=[];
- for(const c of r.citations) {
+ for(const c of [...r.citations,...(r.additions||[]).flatMap(a=>a.citations)]) {
   let s=await tx.source.findUnique({where:{id:c.sourceId}});
   if(!s&&c.sourceTitle&&c.sourceUrl)s={id:c.sourceId,title:c.sourceTitle,edition:null,sourceType:'dictionary',language:'ja',fileReference:c.sourceUrl,levelLabel:null,levelAuthority:null,notes:null};
   if(!s||s.sourceType!=='dictionary'||!s.fileReference||(c.sourceUrl&&c.sourceUrl!==s.fileReference)||(c.sourceTitle&&c.sourceTitle!==s.title))throw new Error('Enrichment requires separately cited dictionary source');
   citations.push({citation:c,source:s});
+ }
+ if(new Set((r.additions||[]).map(a=>a.key)).size!==(r.additions||[]).length)throw new Error('Duplicate supplementary key');
+ for(const a of r.additions||[]){
+  if(new Set(a.citations.map(c=>`${c.sourceId}:${c.sourceRecordKey}`)).size!==a.citations.length)throw new Error('Duplicate supplementary citation');
+  if(a.origin==='user'&&!a.citations.length)throw new Error('Dictionary addition requires independent citation');
+  if(a.payload.sourcePayloadHash&&a.payload.sourcePayloadHash!==hashJson(raw))throw new Error('Supplementary source payload mismatch');
+  if(!a.unresolved&&Array.isArray(a.payload.uncertainty)&&a.payload.uncertainty.length)throw new Error('Uncertain addition must remain draft');
  }
  for(const ref of Object.values(r.fieldOrigins))if(ref.startsWith('citation:')&&!r.citations[Number(ref.split(':')[1])])throw new Error('Missing dictionary citation');
  if(typed){
@@ -226,7 +241,7 @@ export async function recordApproval(db,input,key,confirmation,reviewer){
 async function evidence(tx,batch,key,target,raw,r,role=null,reviewHash=null){
  const prior=await tx.sourceEntry.findFirst({where:{sourceId:batch.sourceId,sourceRecordKey:key},orderBy:{revision:'desc'}});
  if(prior&&((prior.itemId&&prior.itemId!==target.itemId)||(prior.contentId&&target.contentId&&!(await tx.content.findUnique({where:{id:target.contentId}})).supersedesId)))throw new Error('Cannot remap an established source record identity');
- return tx.sourceEntry.create({data:{id:randomUUID(),sourceId:batch.sourceId,...target,sourceRecordKey:key,revision:(prior?.revision||0)+1,supersedesId:prior?.id||null,printedPage:r.printedPage,pdfPageIndex:r.pdfPageIndex,lessonKey:batch.stagedJson.batch?.lesson_key||null,lessonTitle:batch.stagedJson.batch?.lesson_title||null,orderInSource:null,curriculumRole:role,originalPayloadJson:raw,fieldPresenceJson:r.fieldPresence,verificationStatus:'verified',verifiedAt:new Date(),importBatchId:batch.id,promotionReviewHash:reviewHash}});
+ return tx.sourceEntry.create({data:{id:randomUUID(),sourceId:batch.sourceId,...target,sourceRecordKey:key,revision:(prior?.revision||0)+1,supersedesId:prior?.id||null,printedPage:r.printedPage,pdfPageIndex:r.pdfPageIndex,lessonKey:batch.stagedJson.batch?.lesson_key||null,lessonTitle:batch.stagedJson.batch?.lesson_title||null,orderInSource:null,curriculumRole:role,originalPayloadJson:raw,fieldPresenceJson:{...r.fieldPresence,...(r.reviewBasis?{reviewBasis:r.reviewBasis}:{})},verificationStatus:'verified',verifiedAt:new Date(),importBatchId:batch.id,promotionReviewHash:reviewHash}});
 }
 async function addContent(tx,batch,key,raw,r,kind,payload,links=[],approved=true,parentId=null,reviewHash=null){
  const valid=contentSchemas[kind].safeParse(payload);
@@ -284,7 +299,7 @@ export async function promote(db,input){
    for(const [i,x] of [...raw.examples||[],...raw.example_words||[]].entries()) {
     // Keep complete source payload even if text/readings/meanings were not supplied.
     const locator=hashJson(x.source_pdf_pages||[])===hashJson(raw.source_pdf_pages||[])?r:{...r,printedPage:null,pdfPageIndex:null};
-    await addContent(tx,p.batch,`${r.recordKey}/example/${i+1}`,x,locator,'sentence',{japanese:x.japanese??x.word??null,reading:x.reading??null,translation:x.translation??null,meanings:x.meanings??null,sourceWord:!!x.word,sourcePayload:x},[itemId]);
+    await addContent(tx,p.batch,`${r.recordKey}/example/${i+1}`,x,locator,'sentence',{japanese:x.japanese??x.word??null,reading:x.reading??null,translation:x.translation??null,meanings:x.meanings??null,sourceWord:!!x.word,sourcePayload:x},[itemId],true,null,reviewed.reviewHash);
    }
    resolved.set(r.recordKey,itemId);promoted++;
   }
@@ -299,13 +314,35 @@ export async function promote(db,input){
     if(!parent?.contentId||(await tx.content.findUnique({where:{id:parent.contentId}})).kind!=='passage')throw new Error('Parent passage must be promoted first or selected before question');
     parentId=parent.contentId;
    }
-   await addContent(tx,p.batch,r.recordKey,raw,r,r.family==='question'?'question':'passage',{...raw,answerVerified:r.answerVerified,targetsVerified:r.targetsVerified},targets,r.family!=='question'||(r.answerVerified&&r.targetsVerified),parentId,reviewed.reviewHash);
+   await addContent(tx,p.batch,r.recordKey,raw,r,r.family==='question'?'question':'passage',{...raw,answerVerified:r.answerVerified,targetsVerified:r.targetsVerified,...(r.questionReview?{questionReview:r.questionReview}:{})},targets,r.family!=='question'||(r.answerVerified&&r.targetsVerified),parentId,reviewed.reviewHash);
    promoted++;
+  }
+  // Supplementary content never replaces book payloads or answer specifications.
+  for(const reviewed of p.records){
+   const r=reviewed.review.decision;
+   const receipt=await tx.sourceEntry.findFirst({where:{importBatchId:p.batch.id,sourceRecordKey:r.recordKey}});
+   for(const a of r.additions||[]){
+    const key=`${r.recordKey}/addition/${a.key}`;
+    if(await tx.sourceEntry.findFirst({where:{importBatchId:p.batch.id,sourceRecordKey:key}}))continue;
+    const previous=await tx.sourceEntry.findFirst({where:{sourceId:p.batch.sourceId,sourceRecordKey:key},orderBy:{revision:'desc'},include:{content:true}});
+    const content=await tx.content.create({data:{kind:'explanation',origin:a.origin,status:a.unresolved?'draft':'approved',revision:(previous?.content?.revision||0)+1,supersedesId:previous?.contentId||null,parentContentId:receipt.contentId,payloadJson:{...a.payload,additionKey:a.key,reviewBasis:r.reviewBasis||'source_compared',sourceRecordKey:r.recordKey}}});
+    await evidence(tx,p.batch,key,{contentId:content.id},a,r,null,reviewed.reviewHash);
+    const itemIds=receipt.itemId?[receipt.itemId]:r.targets.map(t=>t.itemId||resolved.get(t.recordKey));
+    for(const itemId of new Set(itemIds))await tx.contentItem.create({data:{contentId:content.id,itemId,role:'support'}});
+    for(const c of a.citations){
+     const source=reviewed.review.citations.find(x=>hashJson(x.citation)===hashJson(c)).source;
+     await tx.source.upsert({where:{id:c.sourceId},create:source,update:{}});
+     // Each content revision cites its own snapshot, including after citation gaps.
+     const citationKey=`${p.batch.sourceId}/${key}/${c.sourceRecordKey}/content-revision/${content.revision}`;
+     await tx.sourceEntry.create({data:{sourceId:c.sourceId,contentId:content.id,sourceRecordKey:citationKey,revision:1,printedPage:c.printedPage,pdfPageIndex:c.pdfPageIndex,originalPayloadJson:c.originalPayloadJson,fieldPresenceJson:c.fieldPresence,verificationStatus:'verified',verifiedAt:new Date()}});
+    }
+   }
   }
   const keys=[...(p.batch.stagedJson.entries||[]),...(p.batch.stagedJson.lesson_questions||[]),...(p.batch.stagedJson.exercise_passages||[])].map(x=>x.source_record_key);
   const count=await tx.sourceEntry.count({where:{importBatchId:p.batch.id,sourceRecordKey:{in:keys}}});
   const approvedCount=await tx.sourceEntry.count({where:{importBatchId:p.batch.id,sourceRecordKey:{in:keys},OR:[{item:{status:'approved'}},{content:{status:'approved'}}]}});
-  await tx.importBatch.update({where:{id:p.batch.id},data:{status:approvedCount===keys.length?'promoted':'partial',committedAt:approvedCount===keys.length?new Date():null}});
+  const status=approvedCount===keys.length?'promoted':'partial';
+  if(p.batch.status!==status||(status==='promoted'&&!p.batch.committedAt))await tx.importBatch.update({where:{id:p.batch.id},data:{status,committedAt:status==='promoted'?(p.batch.committedAt||new Date()):null}});
   return {batchId:p.batch.id,promoted,totalPersisted:count,approvedRecords:approvedCount,totalRecords:keys.length};
  },{isolationLevel:'Serializable',timeout:60000});
 }
