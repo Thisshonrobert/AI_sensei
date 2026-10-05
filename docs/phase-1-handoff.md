@@ -1,5 +1,22 @@
 # Phase 1 implementation handoff — 5 October 2026
 
+## Graphify refresh follow-up — 6 October 2026
+
+The Phase 1 index was generated from integrated commit 0f40911 after confirming clean main matched origin/main. Graphify 0.9.76 with its SQL parser is installed in ignored .local/graphify-python. The scan used 22 allowlisted application, test, configuration, and migration files (7,021 words); private data and documentation were excluded.
+
+Outputs: graphify-out/graph.json (223 nodes, 349 edges, 13 communities), graphify-out/GRAPH_REPORT.md, and graphify-out/graph.html. All 22 source references resolve. The report records three test files with no extracted symbols, three SQL self-reference loops, zero dangling/missing endpoints, zero collapsed edge pairs, and sanitized machine-specific node IDs. Graphify ran code-only with no LLM calls.
+
+Implementation: none. Documentation: docs/graphify.md and this handoff. Excluded: ignored Graphify installation, caches, scan corpus, and private-data/. Graphify required: no for Phase 1; its post-integration refresh is complete. No application tests were run for this index-only update.
+
+Manual Git handoff:
+
+`powershell
+rtk git add -- graphify-out/graph.json graphify-out/GRAPH_REPORT.md graphify-out/graph.html docs/graphify.md docs/phase-1-handoff.md
+`
+
+Suggested commit subject: docs: add Phase 1 Graphify index
+
+
 ## Latest handoff — after WaniKani approval
 
 Final user dispositions: both corrected source_answer_text values are now applied to PostgreSQL, preserving original question revisions. All 15 questions record questionReview.sourceAnswerTextVerified=true, grammarConnections=intentionally_deferred and usage=reference_only. They remain draft/ungraded and excluded from scored/scheduled use. The 11 separate supplements are accepted references with payload addedBy=AI, visible AI labels and retained acceptedLimitations. Generated origins remain generated; the normalized dictionary addition retains its immutable dictionary-backed user origin alongside the AI-assistance field. No book field is overwritten by these supplements. The remaining 90 draft records are 15 intentionally deferred question references and their 75 language aids, not 90 separate content errors. There are zero other supplemental drafts and zero kanji meaning gaps. Exact approval/promotion and repeat proofs are private-data/imports/final-content-decisions-20261005/promotion-receipt.json. This supersedes the pending-correction/101-draft status below.
@@ -12,7 +29,7 @@ There are still 101 unresolved Content drafts: 15 questions, 75 dependent questi
 
 Fresh checks: unit 11 passed (9 PostgreSQL cases skipped there); isolated PostgreSQL 9 passed; lint, typecheck and build passed. All three production browser flows passed: reference/source navigation, all ten English grammar explanations, and all 38 kanji mnemonic/radical displays. The latter passed on rerun with a 120-second allowance after the default 30-second timeout was insufficient.
 
-Phase 2 has only a plan at docs/plans/2026-10-05-phase-2.md and the pinned approved ts-fsrs 5.4.2 dependency in package.json/bun.lock. No learner tables, cards, FSRS adapter, review transactions, or review UI have been implemented. The user will start Phase 2 in another chat. No Git mutations ran. Graphify required: no for this display/content follow-up; the original milestone policy still waits for integrated, clean-source confirmation.
+Phase 2 has only a plan at docs/plans/2026-10-05-phase-2.md and the pinned approved ts-fsrs 5.4.2 dependency in package.json/bun.lock. No learner tables, cards, FSRS adapter, review transactions, or review UI have been implemented. The user will start Phase 2 in another chat. No Git mutations ran. No separate Graphify refresh was needed for that display/content follow-up; the Phase 1 integration refresh was completed on 2026-10-06 (see the follow-up at the top).
 
 Private evidence: private-data/imports/wanikani-review-20261005/promotion-receipt-with-radicals.json; canonical-selection-with-radicals.json; canonical-preview-with-radicals.json; mnemonics-radicals-bs4.json. Current unresolved list: private-data/reports/unresolved-drafts-20261005.md. These and .local/python-tools remain excluded from Git. Historical details below describe the original promotion before this follow-up.
 
@@ -119,7 +136,7 @@ From the repository root, inspect the combined diff and then stage only this int
 rtk git add -- package.json bun.lock package-lock.json tsconfig.json next-env.d.ts next.config.ts postcss.config.mjs eslint.config.mjs playwright.config.ts 'src/app/layout.tsx' 'src/app/globals.css' 'src/app/page.tsx' 'src/app/error.tsx' 'src/app/loading.tsx' 'src/app/not-found.tsx' 'src/app/[kind]/page.tsx' 'src/app/[kind]/[id]/page.tsx' 'src/app/sources/page.tsx' 'src/app/sources/[id]/page.tsx' src/components/reference.tsx src/lib/server/db.ts src/lib/server/content/catalog.ts src/lib/server/content/catalog-input.ts src/lib/server/content/canonical-import.mjs tests/canonical-import.test.mjs tests/canonical-postgres.test.mjs tests/catalog-queries.test.mjs tests/browser/catalog.spec.ts AGENTS.md README.md docs/database-import.md docs/repository-structure.md docs/tooling_Verification.md docs/implementation-workflow.md docs/graphify.md docs/phase-1-handoff.md docs/plans/2026-10-05-phase-1.md src/app/README.md src/components/README.md src/lib/server/content/README.md tests/README.md
 ```
 
-**Graphify required: yes**, for the implemented application/content milestone, after integration. Regeneration is pending user confirmation that the default branch is clean and up to date; no index was regenerated.
+At the Phase 1 implementation handoff, Graphify was required after integration. The post-integration refresh is recorded in the follow-up at the top of this document.
 
 ## Antigravity brief
 
