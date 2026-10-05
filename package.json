@@ -5,7 +5,9 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "import:sanitize": "node scripts/import-batches.mjs --sanitize-only",
-    "import:load": "node scripts/import-batches.mjs"
+    "import:load": "node scripts/import-batches.mjs",
+    "import:canonical": "node scripts/canonical-import.mjs",
+    "test:canonical": "node scripts/test-canonical-postgres.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",

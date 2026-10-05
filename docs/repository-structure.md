@@ -15,9 +15,9 @@ AI_sensei/
 │   ├── app/                    # Next.js screens/mutations in phase 1
 │   ├── components/             # UI shared by actual features
 │   └── lib/server/content/     # Content identity, validation, local import
-├── prisma/                     # Source/ImportBatch schema and staging migration
+├── prisma/                     # Staging + bounded canonical content/provenance migrations
 ├── scripts/import-batches.mjs  # Sanitize and load unreviewed JSON batches
-├── tests/                      # Node staging sanitizer checks and fixtures
+├── tests/                      # Node unit + isolated PostgreSQL canonical checks
 ├── docs/
 │   ├── architecture.md
 │   ├── repository-structure.md
@@ -36,7 +36,7 @@ AI_sensei/
     └── inspection/             # Existing private inspection images
 ```
 
-Small README placeholders keep deferred UI folders visible in Git. Prisma, scripts and tests now contain staging implementation; this does not establish the canonical importer or complete phase 1.
+Small README placeholders keep deferred UI folders visible in Git. Prisma, scripts and tests now contain staging and bounded canonical import implementation. `scripts/canonical-import.mjs` exposes local review/promotion commands; `scripts/test-canonical-postgres.mjs` isolates synthetic verification. Item/source pages and real human-approved pilot promotion remain phase-1 gaps.
 
 ## Add only with working behavior
 

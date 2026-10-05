@@ -21,7 +21,7 @@ The Zapier guide contributes organization and style only. Its architecture, mode
 | [Repository structure](repository-structure.md) | Present folders, private storage, deferred modules |
 | [Architecture](architecture.md) | Responsibilities and invariants with plan references |
 | [Tooling & verification](tooling_Verification.md) | Honest tooling status and meaningful evidence requirements |
-| [Database import](database-import.md) | Local Docker PostgreSQL lifecycle and unreviewed JSON staging boundary |
+| [Database import](database-import.md) | Local PostgreSQL lifecycle, preserved staging, canonical review/approval/promotion boundary |
 | [Implementation workflow](implementation-workflow.md) | Ordered phase scope, status, and handoff format |
 | [Graphify](graphify.md) | Optional engineering index, milestone/privacy policy |
 | [Extraction prompt](extraction-templates/extraction-prompt.md) | Existing illustrative interchange templates and manual source extraction |

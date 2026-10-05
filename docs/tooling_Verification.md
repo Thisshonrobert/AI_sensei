@@ -1,6 +1,6 @@
 # Tooling and verification
 
-Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL and unreviewed batch staging.** `compose.yaml`, npm tooling, Prisma Source/ImportBatch schema/migration and a Node JSON sanitizer/importer are present. No Next.js study application, scheduler, canonical-content promotion, application build/lint/typecheck or browser tests exist yet. Staging does not complete the full phase-1 gate.
+Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL, preserved staging, and a bounded canonical importer.** Additive content/provenance migrations, explicit record/hash approval, and isolated PostgreSQL checks now exist. No real records are promoted. No Next.js study application, scheduler, application build/lint/typecheck or browser tests exist. This slice does not complete the full phase-1 gate.
 
 ## Establish tooling in phase 1
 
@@ -81,3 +81,13 @@ Use small synthetic or permitted fixtures; keep actual textbook batches and lear
 - Application build/lint/typecheck/browser flow and backup restore remain unimplemented/unverified. Full Master Plan phase 1 is not complete.
 
 For each handoff record command, outcome, relevant environment, and limitations. Distinguish automated checks, human source verification, pending acceptance, and deferred scope. Never call OCR accuracy, a backup restore, offline operation, or an application test verified merely because instructions or placeholders exist.
+
+### Bounded canonical slice — 5 October 2026
+
+- `rtk proxy npm test`: nine passing unit/staging checks; eight PostgreSQL checks deliberately skipped here unless the isolated runner supplies its test URL. The original six staging tests remain passing.
+- `rtk proxy npm run test:canonical`: eight passing real PostgreSQL tests in a newly created `ai_sensei_canonical_test_<uuid>` database. The runner reads the local connection privately, creates a distinct localhost target, deploys versioned migrations there and never resets/writes fixture data into staging. Target names/logs are retained in ignored `.local/`; these synthetic targets are not a backup of the study database.
+- Covered: exact approval/changed-payload invalidation, unchanged repeat/correction no-ops, real second-write SQL failure with full rollback, automatic exact kanji reuse with two source citations, vocabulary reading/POS/sense distinctions, grammar construction distinctions, immutable source/content/snapshot revisions, wrong typed/provenance rejection, independent dictionary evidence, partial batches/draft-question exclusion, read-only inventory and explicit edition confirmation.
+- `rtk proxy npx prisma validate` and `rtk proxy npx prisma generate`: succeeded with pinned Prisma 6.19.0. `rtk proxy npx prisma migrate deploy`: additive `20261005000000_canonical_import` and `20261005010000_content_link_guard` applied to the local staging database after isolated testing. The second migration closes a reproduced late-target-insertion gap without modifying the already applied first migration. No reset, volume removal or textbook promotion ran.
+- Three real `import:canonical inventory` commands saved private dry-run inventories: grammar 25 records, kanji 38, vocabulary 108. All 171 remain blocked for source/edition/page/identity review; no record approval was created. Raw hashes and staged JSON still match preserved sanitizer-v2 evidence.
+- The private packet separately preserves dictionary URLs/snapshot hashes and AI link rationales. Its structure/count/reference checks do not verify transcription or approve dictionary senses/grammar links/answers. The user-confirmed absence of separate individual-kanji book glosses is recorded; nonempty extracted glosses still need origin checking.
+- Human-approved source review/pilot import, item/source pages and the remaining phase-1 gate are pending. §16's eventual card creation is explicitly deferred to §18 phase 2. No application build, lint, typecheck, browser flow, scheduler or backup restoration is claimed.

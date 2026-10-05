@@ -18,6 +18,7 @@ model Source {
   levelAuthority String?
   notes         String?
   importBatches ImportBatch[]
+  entries       SourceEntry[]
 
   @@map("sources")
 }
@@ -35,8 +36,166 @@ model ImportBatch {
   createdAt            DateTime @default(now()) @db.Timestamptz(6)
   committedAt          DateTime? @db.Timestamptz(6)
   source               Source   @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  entries              SourceEntry[]
+  approvals            PromotionApproval[]
 
   @@unique([sourceId, fileHash])
   @@index([createdAt])
   @@map("import_batches")
+}
+
+model Item {
+  id               String   @id @default(uuid()) @db.Uuid
+  kind             String
+  canonicalKey     String
+  status           String
+  revision         Int
+  fieldOriginsJson Json
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+  vocabulary       Vocabulary?
+  kanji            Kanji?
+  grammar          Grammar?
+  sourceEntries    SourceEntry[]
+  contentLinks     ContentItem[]
+  revisions        ItemRevision[]
+  @@unique([kind, canonicalKey])
+  @@map("items")
+}
+
+model Vocabulary {
+  itemId               String @id @db.Uuid
+  writtenForm          String
+  reading              String
+  partOfSpeech         String
+  senseKey             String
+  meaningEn            String
+  acceptedGlossesJson   Json
+  alternativeFormsJson  Json
+  usageJson            Json
+  item                 Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  kanjiLinks           VocabularyKanji[]
+  @@index([writtenForm, reading])
+  @@map("vocabulary")
+}
+
+model Kanji {
+  itemId          String @id @db.Uuid
+  glyph           String @unique
+  meaningsJson    Json
+  onReadingsJson  Json
+  kunReadingsJson Json
+  notes           String?
+  item            Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  vocabularyLinks VocabularyKanji[]
+  @@map("kanji")
+}
+
+model Grammar {
+  itemId               String @id @db.Uuid
+  pattern              String
+  patternVariantsJson  Json
+  explanationJa        String?
+  explanationEn        String?
+  nuance               String?
+  formationRulesJson   Json
+  usageJson            Json
+  item                 Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  @@map("grammar")
+}
+
+model VocabularyKanji {
+  vocabularyItemId String @db.Uuid
+  kanjiItemId      String @db.Uuid
+  occurrencesJson Json
+  vocabulary      Vocabulary @relation(fields: [vocabularyItemId], references: [itemId], onDelete: Restrict)
+  kanji           Kanji @relation(fields: [kanjiItemId], references: [itemId], onDelete: Restrict)
+  @@id([vocabularyItemId, kanjiItemId])
+  @@map("vocabulary_kanji")
+}
+
+model Content {
+  id              String @id @default(uuid()) @db.Uuid
+  kind            String
+  origin          String
+  payloadJson     Json
+  status          String
+  revision        Int
+  supersedesId    String? @unique @db.Uuid
+  parentContentId String? @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  supersedes      Content? @relation("ContentRevisions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  successor       Content? @relation("ContentRevisions")
+  parent          Content? @relation("ContentParents", fields: [parentContentId], references: [id], onDelete: Restrict)
+  children        Content[] @relation("ContentParents")
+  items           ContentItem[]
+  sourceEntries   SourceEntry[]
+  @@map("content")
+}
+
+model ContentItem {
+  contentId       String @db.Uuid
+  itemId          String @db.Uuid
+  role            String
+  annotationsJson Json?
+  content         Content @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  item            Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  @@id([contentId, itemId, role])
+  @@map("content_items")
+}
+
+model SourceEntry {
+  id                  String @id @default(uuid()) @db.Uuid
+  sourceId            String @db.Uuid
+  itemId              String? @db.Uuid
+  contentId           String? @db.Uuid
+  sourceRecordKey     String
+  revision            Int
+  supersedesId        String? @unique @db.Uuid
+  printedPage         String?
+  pdfPageIndex        Int?
+  lessonKey           String?
+  lessonTitle         String?
+  orderInSource       Int?
+  curriculumRole      String?
+  originalPayloadJson Json
+  fieldPresenceJson   Json
+  verificationStatus  String
+  verifiedAt          DateTime? @db.Timestamptz(6)
+  importBatchId       String? @db.Uuid
+  promotionReviewHash String?
+  source              Source @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  item                Item? @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  content             Content? @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  batch               ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  supersedes          SourceEntry? @relation("SourceRevisions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  successor           SourceEntry? @relation("SourceRevisions")
+  @@unique([sourceId, sourceRecordKey, revision])
+  @@index([importBatchId])
+  @@map("source_entries")
+}
+
+// Immutable approved canonical snapshots; typed tables expose the latest revision.
+model ItemRevision {
+  itemId           String @db.Uuid
+  revision         Int
+  typedJson        Json
+  fieldOriginsJson Json
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  item             Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  @@id([itemId, revision])
+  @@map("item_revisions")
+}
+
+model PromotionApproval {
+  id              String @id @default(uuid()) @db.Uuid
+  importBatchId   String @db.Uuid
+  recordKey       String
+  reviewHash      String
+  reviewJson      Json
+  reviewer        String
+  approvedAt      DateTime @default(now()) @db.Timestamptz(6)
+  batch           ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  @@unique([importBatchId, recordKey, reviewHash])
+  @@map("promotion_approvals")
 }

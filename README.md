@@ -6,7 +6,7 @@ A private study application planned around verified Nihongo no Mori vocabulary, 
 
 ## Current status
 
-The repository now includes a Docker Compose PostgreSQL setup, private environment configuration, a minimal Prisma staging schema, and JSON sanitation/import tooling. The supplied textbook batches remain unreviewed staging material. Existing extraction templates are illustrative, not verified textbook records. No Next.js study app, canonical-content promotion, scheduler or study UI exists yet. Existing page-inspection images are private inputs, not proof of completed ingestion.
+The repository includes local PostgreSQL, preserved JSON staging, and a bounded canonical-content importer with explicit record/hash approval, immutable evidence/revisions, and synthetic PostgreSQL checks. The supplied textbook batches remain unreviewed; no real records have been promoted. A private review packet contains separately cited dictionary candidates and draft grammar links. Existing extraction templates remain illustrative. No Next.js study app, scheduler, item/source pages or study UI exists yet; phase 1 is incomplete.
 
 ## First implementation scope
 
