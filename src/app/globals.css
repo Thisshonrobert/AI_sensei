@@ -44,4 +44,14 @@ p { line-height: 1.7; margin: .65rem 0; overflow-wrap: anywhere; }
 details { margin-top: .8rem; }summary { color: #8c3023; cursor: pointer; font-size: .8rem; }.back { font-size: .85rem; display: block; margin-bottom: 1.3rem; }
 .source-list li, .source-record { padding: 1.5rem 0; border-top: 1px solid #cdd0c3; }.source-list h2 { margin: .5rem 0; }.empty { padding: 2rem 0; }.source-record { scroll-margin-top: 1rem; }
 footer { max-width: 1200px; margin: auto; padding: 1.5rem 2rem; color: #69705d; border-top: 1px solid #cdd0c3; font-size: .75rem; }
+.review-panel { max-width: 760px; border-top: 2px solid #344639; margin-top: 2rem; padding-top: 1.5rem; }
+.review-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin: 1rem 0; }
+.secondary { background: transparent; color: #293a31; border: 1px solid #8c9783; }
+button:disabled { opacity: .5; cursor: default; }
+.recall-form label { display: block; margin: 1rem 0; }
+.recall-form input { margin-top: .35rem; }
+.self-assessment { border: 1px solid #cdd0c3; padding: 1rem; }
+.self-assessment label { display: flex; gap: .7rem; align-items: center; margin: .5rem 0; }
+.self-assessment input { width: 1.15rem; height: 1.15rem; accent-color: #344639; }
+.review-cue mark { background: #e8d7b1; color: #252923; }
 @media (max-width: 650px) { .site-header { align-items: flex-start; flex-direction: column; padding: 1.2rem; gap: 1rem; }.site-header nav { gap: 1rem; }main { padding: 2rem 1.2rem; }.shelf { grid-template-columns: 1fr; }.shelf-section { border-right: 0; border-bottom: 1px solid #cdd0c3; }.shelf-japanese { font-size: 2.5rem; }.entry-link { grid-template-columns: 1fr; gap: .2rem; }.fact { grid-template-columns: 1fr; gap: .3rem; }.pagination { flex-wrap: wrap; }.content-block { padding: .9rem; } }

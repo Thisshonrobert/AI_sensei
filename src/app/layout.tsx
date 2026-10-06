@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export default function Layout({children}: Readonly<{children: React.ReactNode}>) {
   return <html lang="en"><body><a className="skip" href="#content">Skip to content</a>
     <header className="site-header"><Link href="/" className="brand"><span lang="ja">日本語</span><span>AI Sensei<small>PRIVATE REFERENCE SHELF</small></span></Link>
-      <nav aria-label="Main">{['Vocabulary','Kanji','Grammar','Sources'].map(t => <Link key={t} href={`/${t.toLowerCase()}`}>{t}</Link>)}</nav>
+      <nav aria-label="Main"><Link href="/review">Daily recall</Link>{['Vocabulary','Kanji','Grammar','Sources'].map(t => <Link key={t} href={`/${t.toLowerCase()}`}>{t}</Link>)}</nav>
     </header><main id="content" tabIndex={-1}>{children}</main>
     <footer>Local reference library · Imported content does not introduce items or schedule reviews.</footer>
   </body></html>;

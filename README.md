@@ -6,15 +6,15 @@ A private study application planned around verified Nihongo no Mori vocabulary, 
 
 ## Current status
 
-The local Next.js reference application now has vocabulary, kanji, grammar, item-detail and source-detail pages. The user-authorized three-batch import contains 108 vocabulary items, 38 kanji and 10 grammar items, with 171 exact record/hash approvals. Dictionary and generated additions retain separate provenance; 15 grammar questions and 86 supplementary explanations remain unresolved drafts. Original files, staged payloads and source evidence are unchanged.
+The local Next.js application has source-aware reference pages and persistent daily recall at `/review`. Phase 2 adds combined vocabulary objectives, independent kanji meaning/context objectives, ts-fsrs 5.4.2, atomic/idempotent review writes, daily limits and stop/resume. The accepted core import contains 108 vocabulary, 38 kanji and 10 grammar items. Additional source-word vocabulary references stay unscheduled. The local pool has 184 dormant cards; no learner introductions or reviews were created during engineering verification.
 
-These batches were accepted **without PDF comparison**, an explicit user decision, not independent transcription verification. Real repeat imports, synthetic content-identity checks, build, lint, typecheck and a production-browser reference flow passed. Physical PDF intake/transcription gates remain unverified. There are no cards, scheduler, learner familiarity, assessments or generation provider. See [Phase 1 handoff](docs/phase-1-handoff.md) for exact evidence, exclusions and the manual Git bundle.
+These batches were accepted **without PDF comparison**, an explicit user decision, not independent transcription verification. Ten grammar scheduling objectives remain blocked; all 15 reference-only questions and their 75 language aids stay draft. Accepted dictionary/generated assistance retains its origin and limitations. See [Phase 2 handoff](docs/phase-2-handoff.md) for commands, evidence, limitations and manual Git staging. Phase 3 backup/restore, dashboard and release acceptance remain deferred; no assessments or generation provider exist.
 
-## First implementation scope
+## Approved delivery boundary
 
-Master Plan §18 phase 1: establish the application and real dependency versions, incremental schema/migrations, a JSON importer, a small human-verified content batch, and source-aware item pages. Master Plan §16 defines the PDF inventory/extraction pilot. Study can begin before whole-book ingestion; a complete lower-level baseline is unnecessary.
+Master Plan §18 Phase 2 implements reliable daily recall over accepted source records. Phase 3 personal-release features remain deferred. Master Plan §16 still defines the independent PDF inventory/extraction gate. Study can begin before whole-book ingestion; a complete lower-level baseline is unnecessary.
 
-The selected stack is Next.js/React/TypeScript/Tailwind with PostgreSQL/Prisma/Zod and later server-side `ts-fsrs`. Local Windows deployment is the default. See [database import](docs/database-import.md) for the user-selected Docker setup and staging boundary, and [tooling and verification](docs/tooling_Verification.md) for commands and evidence. This work does not complete all of phase 1.
+The selected stack is Next.js/React/TypeScript/Tailwind with PostgreSQL/Prisma/Zod and server-side `ts-fsrs`. Local Windows deployment is the default. See [database import](docs/database-import.md) for the user-selected Docker setup and staging boundary, and [tooling and verification](docs/tooling_Verification.md) for commands and evidence. Independent source-quality gates remain unverified.
 
 Keep books, OCR, actual import data, backups, secrets, and learner history in ignored private storage. See [repository structure](docs/repository-structure.md) and [architecture](docs/architecture.md).
 

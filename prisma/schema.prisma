@@ -59,6 +59,10 @@ model Item {
   sourceEntries    SourceEntry[]
   contentLinks     ContentItem[]
   revisions        ItemRevision[]
+  userItems        UserItem[]
+  cards            Card[]
+  sessionItems     SessionItem[]
+  attempts         Attempt[]
   @@unique([kind, canonicalKey])
   @@map("items")
 }
@@ -75,6 +79,7 @@ model Vocabulary {
   usageJson            Json
   item                 Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
   kanjiLinks           VocabularyKanji[]
+  contextCards         Card[]
   @@index([writtenForm, reading])
   @@map("vocabulary")
 }
@@ -130,6 +135,8 @@ model Content {
   children        Content[] @relation("ContentParents")
   items           ContentItem[]
   sourceEntries   SourceEntry[]
+  cards           Card[]
+  attempts        Attempt[]
   @@map("content")
 }
 
@@ -198,4 +205,155 @@ model PromotionApproval {
   batch           ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
   @@unique([importBatchId, recordKey, reviewHash])
   @@map("promotion_approvals")
+}
+
+model User {
+  id String @id @db.Uuid
+  timezone String
+  settingsJson Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  items UserItem[]
+  cards Card[]
+  sessions StudySession[]
+  attempts Attempt[]
+  reviews ReviewLog[]
+  @@map("users")
+}
+
+model UserItem {
+  userId String @db.Uuid
+  itemId String @db.Uuid
+  familiarity String @default("unseen")
+  introducedAt DateTime? @db.Timestamptz(6)
+  baselineStatus String @default("none")
+  baselineVerifiedAt DateTime? @db.Timestamptz(6)
+  excludedFromTests Boolean @default(false)
+  needsAttention Boolean @default(false)
+  notes String?
+  savedContextsJson Json @default("[]")
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  item Item @relation(fields:[itemId], references:[id], onDelete:Restrict)
+  @@id([userId,itemId])
+  @@index([userId,familiarity])
+  @@map("user_items")
+}
+
+model Card {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  itemId String @db.Uuid
+  objective String
+  templateVersion Int @default(1)
+  promptSpecJson Json
+  answerSpecJson Json
+  contentId String? @db.Uuid
+  contextVocabularyItemId String? @db.Uuid
+  siblingKey String?
+  status String @default("new")
+  dueAt DateTime? @db.Timestamptz(6)
+  fsrsStateJson Json
+  stateVersion Int @default(0)
+  buriedUntil DateTime? @db.Timestamptz(6)
+  introducedAt DateTime? @db.Timestamptz(6)
+  introductionDay String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  item Item @relation(fields:[itemId], references:[id], onDelete:Restrict)
+  content Content? @relation(fields:[contentId], references:[id], onDelete:Restrict)
+  contextVocabulary Vocabulary? @relation(fields:[contextVocabularyItemId], references:[itemId], onDelete:Restrict)
+  attempts Attempt[]
+  reviews ReviewLog[]
+  @@unique([userId,itemId,objective,templateVersion])
+  @@unique([id,userId])
+  @@index([userId,status,dueAt])
+  @@index([userId,introductionDay])
+  @@index([userId,siblingKey])
+  @@map("cards")
+}
+
+model StudySession {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  mode String @default("daily")
+  startedAt DateTime @default(now()) @db.Timestamptz(6)
+  endedAt DateTime? @db.Timestamptz(6)
+  status String @default("active")
+  timeBudgetMinutes Int @default(30)
+  selectionSeed String
+  selectionSnapshotJson Json
+  assessmentResultJson Json?
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  items SessionItem[]
+  attempts Attempt[]
+  reviews ReviewLog[]
+  @@unique([id,userId])
+  @@index([userId,status])
+  @@map("study_sessions")
+}
+
+model SessionItem {
+  sessionId String @db.Uuid
+  itemId String @db.Uuid
+  role String
+  order Int
+  session StudySession @relation(fields:[sessionId], references:[id], onDelete:Restrict)
+  item Item @relation(fields:[itemId], references:[id], onDelete:Restrict)
+  @@id([sessionId,itemId,role])
+  @@map("session_items")
+}
+
+model ReviewLog {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  cardId String @db.Uuid
+  sessionId String @db.Uuid
+  clientEventId String @db.Uuid
+  reviewedAt DateTime @db.Timestamptz(6)
+  rating Int
+  durationMs Int
+  libraryVersion String
+  schedulerConfigJson Json
+  cardBeforeJson Json
+  cardAfterJson Json
+  libraryLogJson Json
+  promptSnapshotJson Json
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  card Card @relation(fields:[cardId,userId], references:[id,userId], onDelete:Restrict)
+  session StudySession @relation(fields:[sessionId,userId], references:[id,userId], onDelete:Restrict)
+  attempt Attempt?
+  @@unique([userId,clientEventId])
+  @@unique([id,userId])
+  @@index([cardId,reviewedAt])
+  @@map("review_logs")
+}
+
+model Attempt {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  sessionId String @db.Uuid
+  cardId String? @db.Uuid
+  contentId String? @db.Uuid
+  primaryTargetItemId String @db.Uuid
+  clientEventId String @db.Uuid
+  promptSnapshotJson Json
+  answerJson Json
+  outcome String @default("ungraded")
+  feedbackJson Json @default("{}")
+  grader String @default("self")
+  hintUsed Boolean @default(false)
+  startedAt DateTime @db.Timestamptz(6)
+  submittedAt DateTime @db.Timestamptz(6)
+  revealedAt DateTime? @db.Timestamptz(6)
+  reviewLogId String? @unique @db.Uuid
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  session StudySession @relation(fields:[sessionId,userId], references:[id,userId], onDelete:Restrict)
+  card Card? @relation(fields:[cardId,userId], references:[id,userId], onDelete:Restrict)
+  content Content? @relation(fields:[contentId], references:[id], onDelete:Restrict)
+  primaryTarget Item @relation(fields:[primaryTargetItemId], references:[id], onDelete:Restrict)
+  reviewLog ReviewLog? @relation(fields:[reviewLogId,userId], references:[id,userId], onDelete:Restrict)
+  @@unique([reviewLogId,userId])
+  @@unique([userId,clientEventId])
+  @@index([userId,primaryTargetItemId,submittedAt])
+  @@map("attempts")
 }
