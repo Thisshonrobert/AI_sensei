@@ -1,8 +1,12 @@
 # Tooling and verification
 
-Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL, preserved staging/canonical import and a read-only Next.js reference app.** The three existing batches were accepted without PDF comparison and promoted with exact approvals. Real repeat imports and unit/PostgreSQL/application/browser checks passed. No scheduler/study-session UI exists. The independent PDF intake/transcription gate remains unverified; see [Phase 1 handoff](phase-1-handoff.md).
+Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL, preserved staging/canonical import, source-aware reference pages and Phase 2 daily recall.** The three existing batches were accepted without PDF comparison and promoted with exact approvals. Cards, pinned scheduling, review transactions and stop/resume now exist. The independent PDF intake/transcription gate remains unverified; see [Phase 2 handoff](phase-2-handoff.md).
 
 ## Establish tooling in phase 1
+
+Persistent cards, ts-fsrs 5.4.2, same-origin review transactions, daily caps and `/review` stop/resume are implemented. Original PDF verification and Phase 3 backup/restore remain pending. See [Phase 2 handoff](phase-2-handoff.md) for the complete fresh verification evidence.
+
+New checks use Bun scripts with Node execution: `rtk proxy bun.cmd run test:review` creates an isolated PostgreSQL database and runs transaction/selection checks; `rtk proxy bun.cmd run test:review:browser` creates its own synthetic fixture and tests production Edge recall. Build first. The `.cmd` wrapper bypasses this session's blocked PowerShell Bun wrapper. Never run synthetic learner review tests against the real library. `test:browser` keeps the existing reference checks and skips the isolated review test unless its dedicated runner enables it.
 
 Use the approved Next.js/React/TypeScript/Tailwind, Prisma/PostgreSQL, and Zod stack. Add `ts-fsrs` with phase-2 review behavior; pin and record its exact version. Evaluate the local Japanese analyzer when phase-5 validation needs it. Bun is the primary package manager/script runner by explicit user decision on 5 October 2026; retain Node for server/import execution. Do not copy Turborepo or Kafka from the Zapier reference. Docker Compose for local PostgreSQL was explicitly selected by the user for this task.
 

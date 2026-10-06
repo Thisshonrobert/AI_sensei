@@ -12,10 +12,10 @@ AI_sensei/
 ├── bun.lock                    # Exact tooling dependency graph
 ├── FINALIZED_PROJECT_PLAN.md
 ├── src/
-│   ├── app/                    # Read-only Next.js reference/item/source screens
+│   ├── app/                    # Reference screens, /review and same-origin /api/review
 │   ├── components/             # UI shared by actual features
-│   └── lib/server/content/     # Content identity, validation, local import
-├── prisma/                     # Staging + bounded canonical content/provenance migrations
+│   └── lib/server/             # content/ import + review/ scheduler/transactions
+├── prisma/                     # Staging, canonical provenance and Phase 2 recall migrations
 ├── scripts/import-batches.mjs  # Sanitize and load unreviewed JSON batches
 ├── tests/                      # Node unit, isolated PostgreSQL and reference-browser checks
 ├── docs/
@@ -39,6 +39,8 @@ AI_sensei/
 `src/app/` now implements reference lists, item details and source details, plus loading/error/not-found states. `src/components/reference.tsx` contains shared provenance/reference UI. `src/lib/server/db.ts` is server-only; content/catalog modules retrieve bounded explicit records. Prisma and scripts retain staging/canonical import; tests include Node, isolated PostgreSQL and production-browser checks. Exact authorized real promotion is complete under acceptance without PDF comparison; physical PDF intake/transcription remains unverified. No later-phase modules were prebuilt.
 
 ## Add only with working behavior
+
+Phase 2 is now implemented: `src/lib/server/review/` contains the pinned FSRS adapter and persistent recall service; `src/components/review.tsx` supplies the recall/reveal/rate interface. `scripts/test-review-postgres.mjs` creates isolated synthetic databases for transaction and browser checks. Assessment/generation modules remain absent. Current evidence is in [Phase 2 handoff](phase-2-handoff.md).
 
 - Phase 2: `src/lib/server/review/` owns scheduler configuration, persisted objectives, queue eligibility, and transactional review submission.
 - Phase 4: `src/lib/server/assessment/` owns cumulative eligibility, selection snapshots, timing, and scoring separate from FSRS.

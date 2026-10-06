@@ -24,6 +24,8 @@ These are the Master Plan's eighteen logical tables. Implement incrementally, ad
 
 ## Recall correctness
 
+Phase 2 implements these recall boundaries in `src/lib/server/review/` and `/api/review`, with `/review` as the client interface. A single User-row lock serializes local mutations; composite foreign keys enforce ownership. Immutable session selections survive stop/restart. Response commitment persists an ungraded Attempt before reveal; rating atomically grades/links it with an append-only ReviewLog and one Card transition. See [Phase 2 handoff](phase-2-handoff.md) for tested behavior and explicit deferred features.
+
 - Vocabulary default: writing → reading **and** selected sense, one card/state. Either component wrong gives Again; both correct permits Hard/Good/Easy according to effort. Store component feedback without a second transition.
 - Core kanji: meaning and fixed source-backed whole-word contextual reading, separate cards/states. Up to 764 core cards after evidence is complete, not 764 immediately active cards. Missing source context is a visible content gap. Incidental cards remain opt-in.
 - Grammar default: one verified contextual cloze with persisted cues/accepted answers; formation card only for demonstrated recurring attachment errors.
