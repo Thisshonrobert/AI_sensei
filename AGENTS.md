@@ -84,6 +84,8 @@ Read [docs/graphify.md](docs/graphify.md). Optional engineering navigation only;
 - Use relevant planning, debugging, testing, review, and verification skills for engineering work, with scope proportional to the task.
 - Use `ponytail` for simple maintainable implementation and Graphify for existing engineering graph queries when useful.
 - Use frontend design/accessibility skills for actual approved screens, preserving the Master Plan's UI constraints.
+- Use **UI/UX Pro** and **Taste** when available, primarily for frontend/UI/UX. They do not govern backend architecture, change the finalized specification, or authorize functionality redesign. If unavailable, report that briefly and use available frontend/accessibility skills; installation is not a prerequisite.
+- For vocabulary and kanji flashcards, use Quizlet only as a UX reference for card interaction, reveal behavior, study flow, and visual hierarchy. Do not copy its branding, UI, assets, or exact design. Adapt interactions to the approved N2 objectives, response-commitment gate, independent FSRS states, and workload limits.
 - Use token-optimizer only for a requested audit or concrete context problem; no routine full state dump.
 - **Do not require `/teach`, developer lessons, interview exercises, or learner checkpoints.** Product grammar explanation/production practice remains Japanese learning under the Master Plan, separate from software-development teaching.
 - Use only skills/tools actually available. No skill, plugin, or model installation is a prerequisite to the core study loop.
