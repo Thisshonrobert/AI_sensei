@@ -53,6 +53,20 @@ rtk git add -- package.json prisma/schema.prisma prisma/migrations/2026100600000
 
 Suggested commit subject: `feat: implement reliable daily recall with persistent FSRS reviews`
 
-**Graphify required: yes.** This is a new implemented architectural milestone. Refresh only after the user integrates/pushes it and confirms the default branch is clean and up to date. Preserve the current Phase 1 index until then; generated paths receive a separate handoff.
+## Graphify refresh after integration
+
+The Phase 2 architectural milestone was merged to `main` at `5b872d0ae430b19233790f89299326fb2a647cdb`; local `main` matched `origin/main` with zero divergence and no source changes. The user requested the refresh after integration. Graphify 0.9.76 used an explicit 35-file engineering allowlist (22 existing application/test/configuration/migration files plus the Phase 2 implementation files listed above), totaling about 13,327 words. Documentation, `.local/`, `.env*`, `private-data/`, books/OCR/imports/backups, learner records, dependency/build output and prior graph output were excluded before extraction. No LLM or network extraction was used; token cost was zero.
+
+Generated outputs: `graphify-out/graph.json` (329 nodes, 699 edges, 14 communities), `graphify-out/GRAPH_REPORT.md`, and `graphify-out/graph.html`. The graph references 33 source files and all resolve. Five test files yielded no AST symbols. Raw extraction diagnostics showed five dangling endpoint edges, 18 external-reference edges, four self-loops and 17 same-endpoint groups; the final graph has zero missing/dangling/external-reference endpoints and zero collapsed endpoint pairs, with three self-loops. The report records these extraction limitations. Privacy and freshness checks found no private or machine-specific source paths; `built_at_commit` matches the integrated commit. The installed skill version reports 0.9.61 while the local package used to generate these outputs is 0.9.76.
+
+Graphify required: yes for this integrated Phase 2 milestone; refresh complete. The ignored machine-local `graphify-out/cache/`, `graphify-out/manifest.json`, interpreter marker and extraction/analysis sidecars are excluded from staging. No application tests were run for this index-only refresh.
+
+Manual Git handoff for this refresh:
+
+```powershell
+rtk git add -- graphify-out/graph.json graphify-out/GRAPH_REPORT.md graphify-out/graph.html docs/graphify.md docs/phase-2-handoff.md
+```
+
+Suggested commit subject: `docs: refresh Graphify index for Phase 2 recall`
 
 Antigravity brief, if the learner selects it: read Master Plan §§4–8/18 A1/A2 and this handoff; edit only the affected engineering docs above from verified evidence. Preserve the unresolved grammar/source-quality gates and Phase 3 boundary. Exclude all private/machine-local material. Sending this brief to another chat is not authorized.
