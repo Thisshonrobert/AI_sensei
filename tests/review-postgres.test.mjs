@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { createUser, syncCards, startSession, sessionView, introduce, commitResponse, rate, stopSession, dashboard, updateBudget, markUnfamiliar } from '../src/lib/server/review/service.mjs';
 import { previewPromotion, recordApproval, promote } from '../src/lib/server/content/canonical-import.mjs';
 import { grammarComparisons, studyContent } from '../src/lib/server/content/study.mjs';
+import * as reviews from '../src/lib/server/review/service.mjs';
 const enabled=!!process.env.REVIEW_TEST_URL;
 let db=enabled?new PrismaClient({datasourceUrl:process.env.REVIEW_TEST_URL,errorFormat:'minimal'}):null;
 test.after(async()=>{await db?.$disconnect();});
@@ -48,7 +49,7 @@ async function fixture({count=8,kanji=false}={}) {
  const user=await createUser(db,randomUUID(),'Asia/Calcutta');
  await db.user.update({where:{id:user.id},data:{settingsJson:{...(await db.user.findUnique({where:{id:user.id}})).settingsJson,newCardLimits:{vocabulary:5,kanji:0,grammar:0,total:8}}}});
  await syncCards(db,user.id,now);
- return user;
+ return {...user,fixtureIds:(await db.item.findMany({where:{canonicalKey:{in:records.map(r=>r.match.canonicalKey)}},select:{id:true},take:count})).map(i=>i.id)};
 }
 async function ready(user,time=now) {
  const s=await startSession(db,user.id,{now:time,includeNew:true});
@@ -61,6 +62,43 @@ async function ready(user,time=now) {
  return {...input,rating:3,components:{readingCorrect:true,meaningCorrect:true}};
 }
 let glyphIndex=0;
+test('flexible study completion is idempotent and preserves scheduler and first-study evidence', {skip:!enabled}, async()=>{
+ assert.equal(typeof reviews.markStudied,'function');
+ const u=await fixture({count:2});
+ const c=await db.card.findFirst({where:{userId:u.id}});
+ const before=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});
+ await Promise.all([reviews.markStudied(db,u.id,c.itemId,now),reviews.markStudied(db,u.id,c.itemId,new Date(+now+1000))]);
+ const first=await db.userItem.findUnique({where:{userId_itemId:{userId:u.id,itemId:c.itemId}}});
+ await reviews.markStudied(db,u.id,c.itemId,new Date(+now+86400000));
+ assert.deepEqual(await db.userItem.findUnique({where:{userId_itemId:{userId:u.id,itemId:c.itemId}}}),first);
+ assert.deepEqual(await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}}),before);
+ assert.equal(await db.reviewLog.count({where:{userId:u.id}}),0);
+ assert.equal(await db.attempt.count({where:{userId:u.id}}),0);
+ await db.userItem.update({where:{userId_itemId:{userId:u.id,itemId:c.itemId}},data:{familiarity:'familiar',notes:'Synthetic retained note',excludedFromTests:true}});
+ const familiar=await db.userItem.findUnique({where:{userId_itemId:{userId:u.id,itemId:c.itemId}}});
+ await reviews.markStudied(db,u.id,c.itemId,new Date(+now+86400000));
+ assert.deepEqual(await db.userItem.findUnique({where:{userId_itemId:{userId:u.id,itemId:c.itemId}}}),familiar);
+ for(const status of ['suspended','retired']){
+  await db.card.update({where:{id:c.id},data:{status,dueAt:now}});
+  await reviews.markStudied(db,u.id,c.itemId,now);await syncCards(db,u.id,now);
+  assert.equal((await db.card.findUnique({where:{id:c.id}})).status,status);
+  assert.equal(await db.card.count({where:{userId:u.id,itemId:c.itemId}}),1);
+ }
+});
+test('flexible activation allowances persist, retry once and reset temporary increases at local midnight', {skip:!enabled},async()=>{
+ assert.equal(typeof reviews.updateActivationLimits,'function');
+ const u=await fixture({count:8}),values={vocabulary:9,kanji:3,grammar:2,total:10};
+ await reviews.updateActivationLimits(db,u.id,values);
+ let d=await dashboard(db,u.id,now);assert.deepEqual(d.limits,values);
+ const event=randomUUID(),extra={vocabulary:2,kanji:1,grammar:0,total:3};
+ await Promise.all([reviews.addActivationBatch(db,u.id,event,extra,now),reviews.addActivationBatch(db,u.id,event,extra,now)]);
+ d=await dashboard(db,u.id,now);assert.equal(d.limits.total,13);assert.equal(d.limits.vocabulary,11);
+ await assert.rejects(()=>reviews.addActivationBatch(db,u.id,event,{...extra,total:4},now));
+ d=await dashboard(db,u.id,new Date('2026-10-06T18:30:00Z'));assert.deepEqual(d.limits,values);assert.equal(d.used.total,0);
+ await reviews.addActivationBatch(db,u.id,event,extra,new Date('2026-10-06T18:30:01Z'));
+ assert.deepEqual((await dashboard(db,u.id,new Date('2026-10-06T18:30:02Z'))).limits,values,'A previous-day retry cannot grant a new increase');
+ assert.equal(await db.reviewLog.count({where:{userId:u.id}}),0);assert.equal(await db.attempt.count({where:{userId:u.id}}),0);
+});
 async function coreContext(user,{context=true,meaning=true}={}) {
  const glyph=String.fromCodePoint(0x4e10+glyphIndex++),sourceId=randomUUID();
  await db.source.create({data:{id:sourceId,title:'Synthetic core kanji',edition:'test',sourceType:'book',language:'ja'}});
@@ -68,20 +106,24 @@ async function coreContext(user,{context=true,meaning=true}={}) {
  const batch=await db.importBatch.create({data:{sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:{content_type:'kanji',source:{edition:'test'},entries:[raw],lesson_questions:[],exercise_passages:[]},validationErrorsJson:[]}});
  const selection={batchId:batch.id,records:[{recordKey:'core',family:'entry',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,match:{mode:'create',canonicalKey:glyph},typed:{glyph,meaningsJson:raw.meanings,onReadingsJson:['シ'],kunReadingsJson:[],notes:null},fieldPresence:{meanings:meaning?'supplied':'not_supplied'},fieldOrigins:{},citations:[],kanjiLinks:[]}]};
  const preview=await previewPromotion(db,selection);await recordApproval(db,selection,'core',preview.records[0].confirmationToken,'synthetic-test');await promote(db,selection);
- await syncCards(db,user.id,now);
- return (await db.kanji.findUnique({where:{glyph}})).itemId;
+ const itemId=(await db.kanji.findUnique({where:{glyph}})).itemId;
+ await syncCards(db,user.id,now,[itemId]);
+ return itemId;
 }
-async function approvedGrammar(user) {
+async function approvedGrammar(user,{withQuestion=true}={}) {
  const sourceId=randomUUID();
  await db.source.create({data:{id:sourceId,title:'Synthetic grammar',edition:'test',sourceType:'book',language:'ja'}});
  const raw={source_record_key:'pattern',pattern:'〜もの',formation:['noun + もの'],meanings:['synthetic sense'],source_pdf_pages:[1],source_printed_pages:['1'],examples:[],review_status:'unreviewed',issues:[]};
  const question={source_record_key:'cloze',prompt:'Synthetic cue: noun + ____',origin:'book',format:'fill_in_blank',options:[],answer_specification:{acceptable_answers:['もの','equivalent answer']},source_pdf_pages:[1],source_printed_pages:['1']};
  const batch=await db.importBatch.create({data:{sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:{content_type:'grammar',source:{edition:'test'},entries:[raw],lesson_questions:[question],exercise_passages:[]},validationErrorsJson:[]}});
  const selection={batchId:batch.id,records:[{recordKey:'pattern',family:'entry',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,match:{mode:'create',canonicalKey:randomUUID()},typed:{pattern:'〜もの',patternVariantsJson:[],explanationJa:null,explanationEn:'synthetic sense',nuance:null,formationRulesJson:[{label:'synthetic',precedingForm:'noun',attachment:'もの',exceptions:[],sourceWording:'noun + もの'}],usageJson:{}},fieldPresence:{meanings:'supplied'},fieldOrigins:{},citations:[],kanjiLinks:[]},{recordKey:'cloze',family:'question',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,targets:[{recordKey:'pattern'}],answerVerified:true,targetsVerified:true}]};
+ if(!withQuestion)selection.records.pop();
  const preview=await previewPromotion(db,selection);for(const r of preview.records)await recordApproval(db,selection,r.recordKey,r.confirmationToken,'synthetic-test');await promote(db,selection);
- await syncCards(db,user.id,now);
- return (await db.item.findUnique({where:{kind_canonicalKey:{kind:'grammar',canonicalKey:selection.records[0].match.canonicalKey}}})).id;
+ const itemId=(await db.item.findUnique({where:{kind_canonicalKey:{kind:'grammar',canonicalKey:selection.records[0].match.canonicalKey}}})).id;
+ await syncCards(db,user.id,now,[itemId]);
+ return itemId;
 }
+
 test('source-complete core creates exactly two independent objectives; source context references stay unscheduled', {skip:!enabled}, async()=>{
  const u=await fixture();const itemId=await coreContext(u);
  const cards=await db.card.findMany({where:{userId:u.id,itemId},orderBy:{objective:'asc'}});
@@ -311,4 +353,65 @@ test('existing hash-approved import publishes a curated comparison to both gramm
  const later={...correction,batchId:laterBatch.id,records:[{...correction.records[0],match:{mode:'correct',itemId:b,expectedRevision:2},typed:{...secondTyped,explanationEn:'synthetic later correction'}}]};
  const laterPreview=await previewPromotion(db,later);await recordApproval(db,later,'pattern',laterPreview.records[0].confirmationToken,'synthetic-test');await promote(db,later);
  assert.equal((await grammarComparisons(db,a)).length,0);assert.equal((await grammarComparisons(db,b)).length,0);
+});
+
+test('flexible waiting pool is oldest first, represents partial kanji and exposes missing grammar/context', {skip:!enabled},async()=>{
+ const u=await fixture({count:2});const oldest=u.fixtureIds[1];
+ await reviews.markStudied(db,u.id,oldest,new Date(+now-86400000));await reviews.markStudied(db,u.id,u.fixtureIds[0],now);
+ const s=await startSession(db,u.id,{now,includeNew:true});assert.equal((await sessionView(db,u.id,s.id,now)).card.itemId,oldest);
+ const ku=await fixture({count:1}),core=await coreContext(ku),missing=await coreContext(ku,{context:false}),grammar=await approvedGrammar(ku,{withQuestion:false});
+ await reviews.updateActivationLimits(db,ku.id,{vocabulary:0,kanji:2,grammar:1,total:3});
+ for(const id of [core,missing,grammar])await reviews.markStudied(db,ku.id,id,now);
+ const ks=await startSession(db,ku.id,{now,includeNew:true});const v=await sessionView(db,ku.id,ks.id,now);
+ await introduce(db,ku.id,ks.id,v.card.id,now);
+ const d=await dashboard(db,ku.id,now);assert.equal(d.partialItems,1);assert.equal(d.blockedItems,2);assert.equal(d.missingObjectives,2);
+ const st=await reviews.studyStatus(db,ku.id,core);assert.equal(st.waiting,1);assert.equal(st.active,1);
+ assert.deepEqual((await reviews.studyStatus(db,ku.id,grammar)).missing,['grammar_cloze']);
+ assert.ok((await reviews.studyStatus(db,ku.id,missing)).missing.includes('kanji_reading_context'));
+ const cards=await db.card.findMany({where:{userId:ku.id,itemId:core}});assert.ok(cards.find(c=>c.status==='new').buriedUntil>now);
+});
+test('flexible parallel activation cannot overspend, and backlog pauses activation but not studied marking', {skip:!enabled},async()=>{
+ const u=await fixture({count:3});for(const id of u.fixtureIds)await reviews.markStudied(db,u.id,id,now);
+ await reviews.updateActivationLimits(db,u.id,{vocabulary:1,kanji:0,grammar:0,total:1});
+ const pair=await Promise.all([startSession(db,u.id,{now,includeNew:true}),startSession(db,u.id,{now,includeNew:true})]);assert.equal(pair[0].id,pair[1].id);
+ const s=pair[0],v=await sessionView(db,u.id,s.id,now);
+ await Promise.all([introduce(db,u.id,s.id,v.card.id,now),introduce(db,u.id,s.id,v.card.id,now)]);
+ assert.equal((await dashboard(db,u.id,now)).used.total,1);
+ const input={sessionId:s.id,cardId:v.card.id,stateVersion:0,clientEventId:randomUUID(),answer:{reading:'forgot',meaning:'forgot'}};
+ await commitResponse(db,u.id,input,now);await rate(db,u.id,{...input,rating:3,components:{readingCorrect:true,meaningCorrect:true}},now);
+ let next=await startSession(db,u.id,{now,includeNew:true});assert.equal((await sessionView(db,u.id,next.id,now)).card,null);
+ await reviews.addActivationBatch(db,u.id,randomUUID(),{vocabulary:1,kanji:0,grammar:0,total:1},now);
+ next=await startSession(db,u.id,{now,includeNew:true});assert.ok((await sessionView(db,u.id,next.id,now)).card);
+ await reviews.updateActivationLimits(db,u.id,{vocabulary:0,kanji:0,grammar:0,total:0});
+ // The saved +1 increase is consumed; lowering defaults leaves no actionable new card.
+ const lowered=await sessionView(db,u.id,next.id,now);assert.equal(lowered.card,null);assert.ok(lowered.deferred>0);
+ const restarted=await startSession(db,u.id,{now,includeNew:true});assert.equal((await sessionView(db,u.id,restarted.id,now)).card,null);
+ const before=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});
+ await reviews.markStudied(db,u.id,v.card.itemId,new Date(+now+1000));assert.deepEqual(await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}}),before);
+ const b=await fixture({count:3});await db.user.update({where:{id:b.id},data:{settingsJson:{...b.settingsJson,reviewCardBudget:1}}});
+ await db.card.updateMany({where:{userId:b.id,itemId:{in:b.fixtureIds.slice(0,2)}},data:{status:'active',dueAt:now}});
+ await reviews.markStudied(db,b.id,b.fixtureIds[2],now);await reviews.addActivationBatch(db,b.id,randomUUID(),{vocabulary:5,kanji:0,grammar:0,total:5},now);
+ const bs=await startSession(db,b.id,{now,includeNew:true}),bv=await sessionView(db,b.id,bs.id,now);
+ assert.equal(bv.introductionsPaused,true);assert.equal(bv.total,1);assert.equal(bv.card.status,'active');assert.equal((await dashboard(db,b.id,now)).studiedToday,1);
+});
+
+test('flexible deliberate extra allowance permits six genuine vocabulary activations without resetting usage', {skip:!enabled},async()=>{
+ const u=await fixture({count:8});for(const id of u.fixtureIds)await reviews.markStudied(db,u.id,id,now);
+ await reviews.updateActivationLimits(db,u.id,{vocabulary:5,kanji:0,grammar:0,total:5});
+ await reviews.addActivationBatch(db,u.id,randomUUID(),{vocabulary:1,kanji:0,grammar:0,total:1},now);
+ for(let i=0;i<6;i++)await rate(db,u.id,await ready(u),now);
+ const d=await dashboard(db,u.id,now);assert.equal(d.used.vocabulary,6);assert.equal(d.used.total,6);assert.equal(d.waitingObjectives,2);
+ assert.equal(await db.reviewLog.count({where:{userId:u.id}}),6);
+ const s=await startSession(db,u.id,{now,includeNew:true});assert.equal((await sessionView(db,u.id,s.id,now)).card,null);
+});
+test('flexible study records 135 items and 165 dormant objectives without synthetic recall', {skip:!enabled},async()=>{
+ const u=await fixture({count:100}),ids=[...u.fixtureIds];
+ for(let i=0;i<30;i++)ids.push(await coreContext(u));
+ for(let i=0;i<5;i++)ids.push(await approvedGrammar(u));
+ const before=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});
+ for(const id of ids)await reviews.markStudied(db,u.id,id,now);
+ assert.equal(await db.userItem.count({where:{userId:u.id,introducedAt:{not:null}}}),135);
+ const after=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});assert.deepEqual(after,before);
+ const d=await dashboard(db,u.id,now);assert.equal(d.studiedToday,135);assert.equal(d.waitingItems,135);assert.equal(d.waitingObjectives,165);assert.equal(d.used.total,0);
+ assert.equal(await db.card.count({where:{userId:u.id,status:'active'}}),0);assert.equal(await db.attempt.count({where:{userId:u.id}}),0);assert.equal(await db.reviewLog.count({where:{userId:u.id}}),0);
 });

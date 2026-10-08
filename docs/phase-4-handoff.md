@@ -4,7 +4,7 @@ Authority: FINALIZED_PROJECT_PLAN.md §§4, 11–13, 18 and weekly timing checks
 
 ## Implemented
 
-**Learner acceptance update — 8 October 2026:** the learner declares the base Phase 4 complete except for Graphify. This acceptance does not approve the existing draft questions or establish a populated live-content test. The approved extension below is separate pending work; the verification recorded here applies to the base assessment implementation only.
+**Learner acceptance update — 8 October 2026:** the learner declares the base Phase 4 complete except for Graphify. This acceptance does not approve the existing draft questions or establish a populated live-content test. The flexible-study extension is now implemented; its separate verification and exact handoff are in [Phase 4 extension handoff](phase-4-extension-handoff.md). The original verification recorded here applies to the base assessment implementation.
 
 `/weekly` supports a mixed 20-question request and domain-only samples. Largest-remainder domain/stratum allocation, seeded ties, weak/recent/older/baseline eligibility, least-recent target preference, seven-day question-repeat avoidance and explicit answer-exposure conflicts use bounded SQL-backed records. Due status and active cards do not gate tests. Zero baseline works. Unseen/excluded N2 cannot fill shortages; sparse banks produce shorter tests with coverage/omission reports. A reading segment requires two nonconflicting questions attached to one approved eligible passage. Passage target links constrain eligibility without duplicating directly assessed targets.
 
@@ -58,22 +58,10 @@ rtk git add -- package.json prisma/migrations/20261008000000_cumulative_assessme
 
 Suggested commit subject: `feat: implement cumulative assessment and persistent timed reading`
 
-## Approved Phase 4 extension — implementation pending
+## Phase 4 extension approval record
 
 The learner approved recording every deliberately studied item while pacing review activation in manageable batches. The authoritative behavior and acceptance gate are in [Master Plan §8](../FINALIZED_PROJECT_PLAN.md#phase-4-extension-flexible-study-completion-and-review-activation) and §18. Add Mark as studied to each vocabulary, kanji and grammar detail page; show the waiting/active/unavailable states and adjustable activation allowances, including explicit extra batches. Studied marking creates no synthetic FSRS event. Approved weekly questions may target studied items before card activation; tests remain cumulative samples with honest omissions.
 
-Study starts **10 October 2026**. Use **15 December 2026** as a provisional preparation deadline, not a verified exam date: **66 study days** precede it (10 October–14 December inclusive). Workday study time and a personal daily target are unspecified. This update records approved scope only; no extension UI, database behavior or test is claimed implemented.
+Study starts **10 October 2026**. Use **15 December 2026** as a provisional preparation deadline, not a verified exam date: **66 study days** precede it (10 October–14 December inclusive). Workday study time and a personal daily target are unspecified. The original approval update recorded scope only; implementation and actual checks are now recorded in [the extension handoff](phase-4-extension-handoff.md).
 
-Documentation scope: `FINALIZED_PROJECT_PLAN.md`, `AGENTS.md`, `README.md`, `docs/architecture.md`, `docs/implementation-workflow.md`, `docs/phase-4-handoff.md`. Implementation: none in this update. Excluded: all pre-existing application/test/package/migration changes, other documentation changes, graph outputs/caches and private data. These six files also contain earlier uncommitted Phase 4 work: full-file staging includes that work and is not an extension-only commit. Keep the existing base-phase bundle separate in intent when reviewing the combined diff.
-
-Verification for this documentation update: the changed prose was inspected; `rtk git diff --check -- FINALIZED_PROJECT_PLAN.md AGENTS.md README.md docs/architecture.md docs/implementation-workflow.md docs/phase-4-handoff.md` passed for tracked changes, and the untracked handoff was inspected separately. PowerShell date subtraction independently returned 66 days. Application checks were not rerun for prose-only changes; extension acceptance remains unverified.
-
-**Graphify required: no** for this documentation-only extension approval. The base Phase 4 milestone's Graphify follow-up remains pending integration and confirmation that the default branch is clean/up to date.
-
-After reviewing the earlier Phase 4 edits in these shared files, the exact manual staging command for these documentation paths is:
-
-```powershell
-rtk git add -- FINALIZED_PROJECT_PLAN.md AGENTS.md README.md docs/architecture.md docs/implementation-workflow.md docs/phase-4-handoff.md
-```
-
-Suggested subject for the reviewed documentation bundle: `docs: record phase 4 acceptance and flexible study extension`
+Approval documentation preceded implementation; its prose-only checks did not establish application completion. Use [the extension handoff](phase-4-extension-handoff.md) for current verification, integration prerequisites and the exact manual staging command.

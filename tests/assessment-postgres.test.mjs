@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { createUser, LOCAL_USER_ID, startSession, sessionView, stopSession, updateBudget, syncCards,introduce,commitResponse,rate } from '../src/lib/server/review/service.mjs';
 import { bankHash, publishBank } from '../src/lib/server/assessment/bank.mjs';
 import { startAssessment, assessmentView, saveAnswer, beginReading, submitAssessment, selfGrade, continuePractice,reportQuestion } from '../src/lib/server/assessment/service.mjs';
+import { markStudied } from '../src/lib/server/review/service.mjs';
 const enabled=!!process.env.ASSESSMENT_TEST_URL;
 const db=enabled?new PrismaClient({datasourceUrl:process.env.ASSESSMENT_TEST_URL,errorFormat:'minimal'}):null;
 const now=new Date('2026-10-08T10:00:00Z');
@@ -32,6 +33,21 @@ async function fixture({reading=false,local=false,ruleReading=false}={}){
  return {user,ids,questions,bank};
 }
 const answer=(s,q,value='my response')=>({sessionId:s,questionId:q,clientEventId:randomUUID(),answer:{response:value,reading:'しけん'}});
+
+test('flexible studied inactive targets enter new weekly tests without changing a running selection', {skip:!enabled},async()=>{
+ const f=await fixture();
+ await db.userItem.update({where:{userId_itemId:{userId:f.user.id,itemId:f.ids[1]}},data:{introducedAt:null,familiarity:'unseen'}});
+ const s=await startAssessment(db,f.user.id,{now});const frozen=(await db.studySession.findUnique({where:{id:s.id}})).selectionSnapshotJson;
+ assert.equal(frozen.questions.length,1);assert.equal(frozen.questions[0].primaryTargetItemId,f.ids[0]);
+ const time=new Date(+now+1000);await markStudied(db,f.user.id,f.ids[1],time);
+ await markStudied(db,f.user.id,f.ids[1],new Date(+time+86400000));
+ assert.equal((await db.userItem.findUnique({where:{userId_itemId:{userId:f.user.id,itemId:f.ids[1]}}})).introducedAt.toISOString(),time.toISOString());
+ assert.equal(await db.card.count({where:{userId:f.user.id,status:'active'}}),0);assert.equal(await db.reviewLog.count({where:{userId:f.user.id}}),0);
+ assert.deepEqual((await db.studySession.findUnique({where:{id:s.id}})).selectionSnapshotJson,frozen);
+ await saveAnswer(db,f.user.id,answer(s.id,frozen.questions[0].id),time);await submitAssessment(db,f.user.id,s.id,time);
+ const next=await startAssessment(db,f.user.id,{now:new Date(+time+1000)});const view=await assessmentView(db,f.user.id,next.id,time);
+ assert.ok(view.questions.some(q=>q.primaryTargetItemId===f.ids[1]));
+});
 test('weekly refresh retains selection; eligibility needs no cards; responses hide feedback and retries are exact', {skip:!enabled},async()=>{
  const f=await fixture();const s=await startAssessment(db,f.user.id,{now});
  const before=await db.studySession.findUnique({where:{id:s.id}});

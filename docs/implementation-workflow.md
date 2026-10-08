@@ -6,7 +6,7 @@ Authority: Master Plan §§16–19. Current state includes PostgreSQL, preserved
 
 Phase 3 recovery, dashboard, study backs and lookup are implemented and learner-accepted. Phase 4 reuses the existing content/session/attempt records without FSRS writes. New Graphify generation waits for confirmed integration and a clean, up-to-date default branch.
 
-On 8 October 2026 the learner accepted Phase 4 except for Graphify and approved the **Phase 4 extension: flexible study completion and review activation** (Master Plan §§8, 10, 12, 18). That extension is the next approved scope and is not implemented by this documentation update. The study window starts 10 October, with 15 December as a provisional deadline; no personalized daily quota is set. Question publication gates remain separate, and Phase 5 is not authorized by this decision.
+On 8 October 2026 the learner accepted Phase 4 except for Graphify and approved the **Phase 4 extension: flexible study completion and review activation** (Master Plan §§8, 10, 12, 18). The extension is implemented and automatically verified; see [handoff](phase-4-extension-handoff.md). The study window starts 10 October, with 15 December as a provisional deadline; no personalized daily quota is set. Question publication gates remain separate, and Phase 5 is not authorized by this decision.
 
 | Phase | Working deliverable | Boundary |
 |---|---|---|
@@ -14,7 +14,7 @@ On 8 October 2026 the learner accepted Phase 4 except for Graphify and approved 
 | 2 | Reliable daily recall: objectives, ts-fsrs, review UI, limits, persistence | Atomic/idempotent events; independent states; no practice ratings |
 | 3 | Usable personal release: daily flow, dashboard, grammar explanation/comparison, backup/export, external listening, Takoboto | Useful without AI; tested restore; authentic time-budget usage |
 | 4 | Cumulative assessment: question bank, eligible selection, weekly timed reading/results | Persisted selection/deadline; no FSRS writes from tests |
-| 4 extension | Explicit study completion on vocabulary/kanji/grammar pages, waiting review pool, adjustable activation batches and dashboard counts | Approved, implementation pending; no synthetic recall, no automatic mass activation, unchanged approved-question gates |
+| 4 extension | Explicit study completion on vocabulary/kanji/grammar pages, waiting review pool, adjustable activation batches and dashboard counts | Implemented, automated gates verified; no synthetic recall, no automatic mass activation, unchanged approved-question gates |
 | 5 | Generated contextual practice: prompt export/draft import, generation provenance, validation, reading approval/UI | Optional free automation; stored aids; zero baseline works |
 | 6 | Incremental book growth and optional personal baseline | Preserve corrections/history; no bulk unseen activation |
 | 7 | Observed-need extensions | No speculative audio, reminders, production feedback infrastructure |

@@ -1,5 +1,9 @@
 # Tooling and verification
 
+## Phase 4 flexible-study extension — 8 October 2026
+
+Explicit study recording, waiting-pool counts and configurable activation allowances are implemented and verified separately from question publication. No migration or dependency was added. The existing isolated `test:review`, `test:assessment` and browser runners cover the extension; see [exact evidence and handoff](phase-4-extension-handoff.md). Study marking and allowance adjustments create no recall events; genuine first recall retains the existing scheduler transaction.
+
 ## Phase 4 update — 8 October 2026
 
 The learner accepted Phase 3 and authorized Phase 4. Assessment uses `/weekly` and `/api/assessment`, an explicit reviewed bank intake, persisted selection/answers, server reading deadlines, assisted continuation and self/rule outcome reports. See [Phase 4 handoff](phase-4-handoff.md) for final actual verification and remaining live-content approval, and [bank contract](assessment-bank.md) for intake. The earlier pending Phase 3 statements below are historical. The active `.env` and process connection were classified as local during this implementation; the explicit Neon target is retained separately, without an automatic switch or sync.
