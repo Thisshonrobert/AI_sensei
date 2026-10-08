@@ -1,0 +1,11 @@
+# Private material and untracked directories
+private-data/
+.local/
+node_modules/
+.next/
+out/
+dist/
+coverage/
+playwright-report/
+test-results/
+graphify-out/
