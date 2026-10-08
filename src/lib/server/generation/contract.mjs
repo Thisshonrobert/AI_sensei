@@ -22,6 +22,13 @@ export const draftSchema=z.object({
  if(new Set(p.omissions.map(o=>o.itemId)).size!==p.omissions.length)c.addIssue({code:'custom',message:'Duplicate omission'});
 });
 export const parseDraft=value=>draftSchema.parse(value);
+// A conservative study-scope check, not a JLPT classifier or a familiarity claim.
+export function unprovidedKanji(draft,scope){
+ const forms=[...scope.targets,...scope.support].flatMap(t=>[t.writtenForm,...(t.variants||[])]).filter(v=>typeof v==='string');
+ const allowed=new Set(forms.join('').match(/\p{Script=Han}/gu)||[]);
+ const text=[draft.japanese,draft.title,...draft.questions.flatMap(q=>[q.prompt,...q.options.map(o=>o.text),q.explanation])].join('');
+ return [...new Set(text.match(/\p{Script=Han}/gu)||[])].filter(glyph=>!allowed.has(glyph));
+}
 export const reviewHash=(draft,scope)=>createHash('sha256').update(JSON.stringify({draft:parseDraft(draft),scope})).digest('hex');
 export function validateScope(value,scope){
  const draft=parseDraft(value),allowed=new Set(scope.targets.map(t=>t.id)),problems=[];
@@ -64,6 +71,6 @@ export function normalizeProviderDraft(value){
   const {quote:ignoredQuote,occurrence:ignoredOccurrence,...fields}=entry;void ignoredQuote;void ignoredOccurrence;
   return {...fields,start,end:start+quote.length};
  }
- if(value.kind==='passage'&&([...new Intl.Segmenter('ja',{granularity:'sentence'}).segment(japanese)].filter(s=>s.segment.trim()).length>15||japanese.split(/\r?\n/).filter(s=>s.trim()).length>15))throw new Error('A passage must fit within fifteen sentence lines');
+ if(value.kind==='passage'&&[...new Intl.Segmenter('ja',{granularity:'sentence'}).segment(japanese)].filter(s=>s.segment.trim()).length>10)throw new Error('A passage must contain at most ten sentences');
  return parseDraft({...value,uses:value.uses.map(resolve),support:value.support.map(resolve),issues:value.issues.map(resolve),sentences:value.sentences.map(resolve),questions:value.questions.map(q=>({...q,evidence:resolve(q.evidence)}))});
 }

@@ -55,17 +55,17 @@ test('Gemini coordinator bounds corrections, retains AI review as draft and stop
  let calls=0,quota=false;const server=createServer(async(req,res)=>{
   for await(const chunk of req){void chunk;}calls++;
   if(quota){res.writeHead(429);res.end('{}');return;}
-  const output=calls===1?{invalid:true}:calls===2?providerDraft(f.id):{verdict:'acceptable_for_ungraded_practice',summary:'Synthetic language review',findings:[]};
+  const output=calls===1?{invalid:true}:calls===2?{...providerDraft(f.id),japanese:'食べる。政治。'}:calls===3?providerDraft(f.id):{verdict:'acceptable_for_ungraded_practice',summary:'Synthetic language review',findings:[]};
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(output)}]}}]}));
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{
   const options={endpoint:`http://127.0.0.1:${server.address().port}`},input={purpose:'passage',topic:'Meal',targetIds:[f.id],review:true};
   const result=await generateDraft(db,f.user.id,input,options);
-  assert.equal(calls,3);assert.equal(result.status,'draft');assert.equal(result.report.providerReport.scoredEligible,false);
-  assert.equal(result.report.providerReport.failures.length,1);assert.equal(result.report.providerReport.modelReview.verdict,'acceptable_for_ungraded_practice');
+  assert.equal(calls,4);assert.equal(result.status,'draft');assert.equal(result.report.providerReport.scoredEligible,false);
+  assert.equal(result.report.providerReport.failures.length,2);assert.equal(result.report.providerReport.failures[1][0].code,'unprovided_kanji');assert.equal(result.report.providerReport.modelReview.verdict,'acceptable_for_ungraded_practice');
   assert.equal(await db.content.count({where:{generationRunId:result.id,status:'approved'}}),0);
-  quota=true;await assert.rejects(()=>generateDraft(db,f.user.id,input,options),e=>e.status===429);assert.equal(calls,4);
+  quota=true;await assert.rejects(()=>generateDraft(db,f.user.id,input,options),e=>e.status===429);assert.equal(calls,5);
   assert.equal(await db.generationRun.count({where:{userId:f.user.id,status:'failed'}}),1);
   assert.ok((await generationList(db,f.user.id)).every(r=>r.status!=='failed'&&r.status!=='exported'));
   assert.equal(await db.card.count({where:{userId:f.user.id}}),0);
@@ -81,7 +81,14 @@ test('a recent 85-item study week is included with older revision, without chang
  assert.ok(r.prompt.length<=40000);
  assert.ok(recent.every(item=>r.scope.targets.some(t=>t.id===item.itemId)));
  assert.ok(old.every(id=>r.scope.targets.some(t=>t.id===id)));
- assert.match(r.prompt,/1–15 sentence lines/);
+ assert.match(r.prompt,/1–10 connected sentences/);
+ assert.match(r.prompt,/one continuous paragraph/);
+ assert.match(r.prompt,/same topic, characters and situation/);
+ assert.match(r.prompt,/N3-level sentence structure/);
+ assert.match(r.prompt,/Avoid new N2\/N1 vocabulary/);
+ assert.match(r.prompt,/write other supporting words in kana/);
+ assert.doesNotMatch(r.prompt,/for private N2 practice/);
+ assert.doesNotMatch(r.prompt,/Use newline-separated sentences/);
  assert.deepEqual(await db.userItem.findMany({where:{userId:f.user.id,itemId:{in:recent.map(i=>i.itemId)}},orderBy:{itemId:'asc'},select:{itemId:true,introducedAt:true}}),recent);
 });
 test('zero baseline export and draft import preserve canonical and learner state; retries and ownership enforced',{skip:!enabled},async()=>{

@@ -1,5 +1,53 @@
 # Phase 5 handoff — 8 October 2026
 
+## N3 recall-passage difficulty follow-up
+
+Authority: Master Plan §§14–15, 18 and the N3 recall-passage difficulty clarification. Generation now requests N3-or-simpler surrounding sentence structure, everyday contexts and supporting vocabulary, preserving supplied studied N2 vocabulary/kanji/grammar as deliberate recall targets. Advanced incidental words, unfamiliar compounds and non-target N2/N1 grammar are discouraged even when written in kana. Comprehension questions/options follow the same difficulty. One connected passage of up to ten sentences remains the output format.
+
+No verified N3 kanji inventory exists here. The conservative provider guard accepts kanji present in the supplied eligible target/support written forms and variants; other supporting words must use kana. The server checks the passage, title and question prompts/options/explanations before independent analysis. Out-of-scope glyphs trigger specific corrective feedback within the existing maximum of two correction retries. Text and quoted annotations are regenerated together rather than edited in place. This glyph rule does not prove knowledge of an unfamiliar compound made of allowed characters; the prompt and optional language review address those cases and N3 difficulty approximately. Human approval remains the publication gate. Historical/manual drafts remain compatible and are not rewritten. No dependency, migration, real Gemini call or learner-state write was added.
+
+Fresh verification: the new kanji-scope regression failed before implementation and passed afterward. `rtk proxy bun.cmd exec "node --test tests/generation-anchors.test.mjs tests/generation-contract.test.mjs tests/reading-context.test.mjs"` passed all 10 focused tests, covering retained target/support/variant kanji, kana, supplementary Han characters and incidental question kanji. `rtk proxy bun.cmd run test` passed 52 tests with 53 database-dependent skips, zero failures. `rtk proxy bun.cmd run test:generation` passed 10 isolated PostgreSQL checks with the browser fixture skipped; the synthetic provider first returned malformed output, then out-of-scope kanji, then corrected text, exercising both retry slots before optional review and preserving quota/failure/publication/scheduling guards. Prompt assertions retain all 90 recent/older targets within the 40,000-character budget. `rtk proxy bun.cmd run lint`, `rtk proxy bun.cmd run build` (including TypeScript) and `rtk git diff --check` exited 0. Standalone typecheck and browser checks were not rerun for this server-only follow-up; the prior continuous-reader checks below remain historical evidence. No live language-quality test or certified JLPT classification was performed.
+
+**Implementation:** `src/lib/server/generation/service.mjs`, `src/lib/server/generation/contract.mjs`, `tests/generation-anchors.test.mjs`, `tests/generation-postgres.test.mjs`.
+
+**Documentation:** the Master Plan clarification, this handoff and `docs/tooling_Verification.md`.
+
+**Excluded or uncertain:** all other pre-existing dirty/untracked files, private data, `.env*`, ignored `.local/` evidence, Graphify sidecars and build/test artifacts. Shared staged paths also retain earlier authorized edits. No Git mutation was executed.
+
+```powershell
+rtk git add -- src/lib/server/generation/service.mjs src/lib/server/generation/contract.mjs tests/generation-anchors.test.mjs tests/generation-postgres.test.mjs FINALIZED_PROJECT_PLAN.md docs/phase-5-handoff.md docs/tooling_Verification.md
+```
+
+Suggested subject: `fix: keep recall passages at N3 supporting difficulty`
+
+Graphify required: no for this bounded generation-policy refinement; no new integration prerequisite. Phase 6 remains unauthorized. Generate a new passage to apply the changed difficulty; prior saved wording is preserved.
+
+The final title-only regression also failed before its fix and passed afterward. Final focused tests and isolated database checks were rerun after that fix (10 passed each). The validated localhost:3001 project server was reloaded from the final build; a read-only `/practice` request returned HTTP 200 without printing learner content.
+
+## Continuous connected passage follow-up
+
+Authority: Master Plan §§14–15, 18 and the continuous-passage clarification. New prompts request one continuous Japanese paragraph of 1–10 connected sentences with a consistent topic/scene and logical progression. Natural coherence takes priority over forced coverage; omitted targets still need reasons. The optional AI review now checks disconnected examples and abrupt topic changes. Provider validation counts actual sentence units and rejects an eleventh sentence; existing historical/manual transport contracts remain compatible. Prompt versions distinguish the new instruction from earlier retained runs.
+
+The reader displays the full retained Japanese text in one paragraph. Display whitespace collapses historical newlines while source text, immutable revisions and UTF-16 positions remain unchanged. Sentence translations are available in collapsed Sentence help below the passage. Word help, hover/focus ruby, Off mode, saved context and publication/question gates remain intact. No dependency, migration, live Gemini request, canonical mutation or scheduling change was introduced.
+
+Verification: `rtk proxy bun.cmd run test` passed 51 tests, skipped 53 database-dependent fixtures and failed none. Focused anchor/contract/context tests passed all 9; the ten-sentence boundary failed before implementation and passed afterward. `rtk proxy bun.cmd run test:generation` passed 10 isolated PostgreSQL checks, with its browser fixture skipped. Final lint, typecheck and production build exited 0. The added historical-newline browser regression failed with `pre-wrap` rather than `normal`, reproducing the review finding before the scoped CSS fix. Final `rtk proxy bun.cmd run test:generation:browser` passed all 11 PostgreSQL checks and both production Edge browser tests, including one continuous paragraph, collapsed sentence help, preserved word/ruby/context behavior and mobile fit. The mobile reader screenshot was inspected; screenshots remain ignored under `.local/`. `rtk git diff --check` exited 0. The UI detector found no component issues; its CSS warning refers to the existing user-requested thick word underline on a rounded inline button, outside this passage change.
+
+**Implementation:** `src/components/practice-reading.tsx`, `src/app/globals.css`, `src/lib/server/generation/service.mjs`, `src/lib/server/generation/contract.mjs`, `tests/generation-anchors.test.mjs`, `tests/generation-postgres.test.mjs`, `tests/browser/generation.spec.ts`.
+
+The validated project study server was reloaded with `rtk proxy powershell -NoProfile -File .local/restart-practice-server.ps1`; a read-only localhost:3001 `/practice` request returned HTTP 200. Refresh to load the continuous display; generate a new passage for the updated connected-writing instructions. No existing passage wording was rewritten.
+
+**Documentation:** the Master Plan clarification, this handoff and `docs/tooling_Verification.md`.
+
+**Excluded or uncertain:** all other pre-existing dirty/untracked files, `.env*`, `.local/`, private data, Graphify sidecars and generated test/build artifacts. Scoped shared files retain earlier work; staging includes each file's full current contents. No Git mutation was executed.
+
+```powershell
+rtk git add -- src/components/practice-reading.tsx src/app/globals.css src/lib/server/generation/service.mjs src/lib/server/generation/contract.mjs tests/generation-anchors.test.mjs tests/generation-postgres.test.mjs tests/browser/generation.spec.ts FINALIZED_PROJECT_PLAN.md docs/phase-5-handoff.md docs/tooling_Verification.md
+```
+
+Suggested subject: `fix: generate connected passages and keep reading continuous`
+
+Graphify required: no for this bounded passage refinement. The Phase 5 milestone refresh is already recorded as completed in `docs/graphify.md`; this follow-up introduces no new integration prerequisite. New provider prose coherence remains a model/human language-quality check, not a deterministic guarantee. Existing saved wording is preserved and not semantically rewritten. Phase 6 remains unauthorized.
+
 Phase 5 implementation and automated acceptance checks are complete. The learner confirmed the API-key project's Free Tier in AI Studio on 8 October 2026; the bounded live Gemini sentence smoke test passed. Authority: Master Plan §§2, 4, 12–15, 18–20 and its authorization amendment. Phase 6 is unauthorized. No real generated Japanese or question answers were human-approved during implementation or live verification.
 
 ## Implemented behavior

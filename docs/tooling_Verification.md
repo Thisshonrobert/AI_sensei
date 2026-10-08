@@ -2,6 +2,10 @@
 
 ## Phase 5 contextual practice — 8 October 2026
 
+The N3 recall-passage clarification sets surrounding language to N3 or simpler while retaining supplied studied N2 targets. New provider generation requires kana for supporting words whose kanji are absent from supplied eligible study forms; the server checks passage/question glyphs and requests correction within existing retry limits. This is a conservative study-scope rule, not a certified JLPT inventory or a claim of familiarity.
+
+The continuous-passage clarification now requires one connected Japanese paragraph of up to ten sentences for new provider generation. The reader collapses display line breaks without changing retained text or UTF-16 spans; optional sentence help sits below the passage. See the latest follow-up evidence in [phase-5-handoff.md](phase-5-handoff.md).
+
 The later passage-only refinement supersedes the eight-target UI sample. Practice now selects up to 100 latest-study-week targets plus 20 random older targets, uses quoted provider annotations resolved to UTF-16 spans on the server, hides failed runs from saved practice and retains human publication checks. See the passage-only amendment in the Master Plan and the follow-up evidence in [phase-5-handoff.md](phase-5-handoff.md). Historical sentence/manual transport records remain supported; new provider generation is passage-only.
 
 Phase 4 including Graphify is learner-accepted; Phase 5 implementation is authorized. Manual export/import and optional Gemini drafts retain provenance; approved kuromoji supplies independent local analysis. Reading aids, exact human publication, saved contexts, generated-question eligibility and retirement are implemented. API calls remain gated on actual project Free Tier confirmation; model review only recommends ungraded practice. See [progress and actual evidence](phase-5-handoff.md).
