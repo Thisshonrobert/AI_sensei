@@ -40,7 +40,7 @@ AI_sensei/
 
 ## Add only with working behavior
 
-Phase 2 is now implemented: `src/lib/server/review/` contains the pinned FSRS adapter and persistent recall service; `src/components/review.tsx` supplies the recall/reveal/rate interface. `scripts/test-review-postgres.mjs` creates isolated synthetic databases for transaction and browser checks. Assessment/generation modules remain absent. Current evidence is in [Phase 2 handoff](phase-2-handoff.md).
+Phase 2 is implemented: `src/lib/server/review/` contains the pinned FSRS adapter and persistent recall service; `src/components/review.tsx` supplies the recall/reveal/rate interface. `scripts/test-review-postgres.mjs` creates isolated synthetic databases for transaction and browser checks. Phase 4 adds `src/lib/server/assessment/`, `/weekly`, `/api/assessment`, and explicit bank intake/isolated verification scripts; see [Phase 4 handoff](phase-4-handoff.md). Generation remains absent.
 
 - Phase 2: `src/lib/server/review/` owns scheduler configuration, persisted objectives, queue eligibility, and transactional review submission.
 - Phase 3: the same review service supplies dashboard/budget/attention behavior; `content/study.mjs` retrieves approved backs/comparisons; `components/study-content.tsx`, `dictionary.tsx` and `daily-budget.tsx` render them. `scripts/backup.mjs` owns private backup/export and separate-target verified restore. Evidence is in [Phase 3 handoff](phase-3-handoff.md).

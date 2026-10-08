@@ -24,6 +24,9 @@ The Zapier guide contributes organization and style only. Its architecture, mode
 | [Database import](database-import.md) | Local PostgreSQL lifecycle, preserved staging, canonical review/approval/promotion boundary |
 | [Backup recovery](backup-recovery.md) | Exercised private backup/export and separate-target restore commands |
 | [Phase 3 handoff](phase-3-handoff.md) | Personal-release behavior, actual verification and remaining acceptance |
+| [Phase 4 handoff](phase-4-handoff.md) | Cumulative assessment, actual checks and live-content approval boundary |
+| [Phase 4 extension handoff](phase-4-extension-handoff.md) | Explicit study completion, waiting pool, configurable activations and actual acceptance evidence |
+| [Assessment bank](assessment-bank.md) | Exact reviewed question/passages contract and explicit hash publication |
 | [Implementation workflow](implementation-workflow.md) | Ordered phase scope, status, and handoff format |
 | [Graphify](graphify.md) | Optional engineering index, milestone/privacy policy |
 | [Extraction prompt](extraction-templates/extraction-prompt.md) | Existing illustrative interchange templates and manual source extraction |

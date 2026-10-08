@@ -1,4 +1,30 @@
 import { test, expect } from '@playwright/test';
+test.use({hasTouch:true});
+
+test('flexible completion on all detail pages and deliberate allowances persist on mobile and reload',async({page,request})=>{
+ test.skip(!process.env.REVIEW_BROWSER_TEST,'Requires isolated synthetic review runner');
+ for(const kind of ['vocabulary','kanji','grammar']){
+  await page.goto(`/${kind}`);await page.locator('[data-item-link]').first().click();
+  const button=page.getByRole('button',{name:'Mark as studied',exact:true});await button.focus();await page.keyboard.press('Enter');
+  await expect(page.locator('.study-completion [role=status]')).toContainText('Studied · first recorded');
+  const before=await page.locator('.study-completion [role=status]').innerText();
+  await page.reload();await expect(page.locator('.study-completion [role=status]')).toHaveText(before);
+  await page.setViewportSize({width:375,height:812});await button.tap();await expect(page.locator('.study-completion [role=status]')).toHaveText(before);
+ }
+ const denied=await request.post('/api/review',{headers:{Origin:'https://example.org'},data:{action:'studied',itemId:'00000000-0000-4000-8000-000000000001'}});expect(denied.status()).toBe(403);
+ await page.goto('/');await expect(page.getByText(/Studied today:/)).toBeVisible();
+ await page.getByText('Adjust review activations',{exact:true}).click();
+ await page.getByLabel('Default Vocabulary',{exact:true}).fill('6');await page.getByLabel('Default Total',{exact:true}).fill('9');
+ await page.getByRole('button',{name:'Save activation allowances'}).click();await expect(page.getByText('Default activation allowances saved. Today’s consumed allowance is retained.')).toBeVisible();
+ await page.reload();await page.getByText('Adjust review activations',{exact:true}).click();await expect(page.getByLabel('Default Vocabulary',{exact:true})).toHaveValue('6');
+ await page.getByLabel('Extra today Vocabulary',{exact:true}).fill('2');await page.getByLabel('Extra today Kanji objectives',{exact:true}).fill('0');await page.getByLabel('Extra today Grammar',{exact:true}).fill('0');await page.getByLabel('Extra today Total',{exact:true}).fill('2');
+ await expect(page.getByText(/Proposed increase: 2 vocabulary/)).toBeVisible();await page.getByRole('button',{name:'Add another batch',exact:true}).click();
+ await expect(page.getByText('Today’s allowance increased. Continue learning to study and activate eligible objectives.')).toBeVisible();
+ await page.reload();await expect(page.getByText(/New review activations:/)).toContainText('/11');
+ await page.waitForLoadState('networkidle');await expect(page.getByRole('heading',{name:'Your imported core pool'})).toBeVisible();
+ expect(await page.locator('body').evaluate(el=>el.scrollWidth<=window.innerWidth)).toBe(true);
+ await page.screenshot({path:'.local/flexible-study-mobile.png',fullPage:true});
+});
 
 // The review browser runner uses an isolated, synthetic database. Never write learner events in the real library.
 test('recall → reveal → rate; committed response survives stop, reload and resume', async({page,request})=>{
@@ -52,7 +78,7 @@ test('daily dashboard, stored grammar comparisons and explicit selected-text loo
  await page.goto('/');
  await expect(page.getByRole('heading',{name:'Your imported core pool'})).toBeVisible();
  await page.getByLabel('Default study block budget').fill('25');await page.getByRole('button',{name:'Save budget'}).click();
- await expect(page.getByText('Block budget saved. Daily card ceilings stay the same.')).toBeVisible();
+ await expect(page.getByText('Block budget saved. Activation allowances stay the same.')).toBeVisible();
  await page.reload();await expect(page.getByLabel('Default study block budget')).toHaveValue('25');
  await expect(page.getByRole('heading',{name:/Your saved block is ready|Ready for today/})).toBeVisible();await page.waitForLoadState('networkidle');await page.screenshot({path:'.local/phase3-dashboard-desktop.png',fullPage:true});
  await page.setViewportSize({width:375,height:812});await page.screenshot({path:'.local/phase3-dashboard-mobile.png',fullPage:true});

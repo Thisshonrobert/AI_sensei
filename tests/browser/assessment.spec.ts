@@ -1,0 +1,43 @@
+import { test,expect } from '@playwright/test';
+test('weekly commit, refresh, timed presentation and self-scored report preserve study state',async({page})=>{
+ test.skip(!process.env.ASSESSMENT_BROWSER_TEST,'Requires isolated synthetic bank');
+ await page.goto('/weekly');
+ await page.getByLabel('Reading minutes').fill('1');
+ await page.getByRole('button',{name:'Start cumulative test'}).click();
+ await expect(page.getByText('Synthetic question 0',{exact:true})).toBeVisible();
+ const first=page.locator('.assessment-question').first();
+ await first.getByLabel('Reading').fill('しけん');await first.getByLabel('Meaning / response').fill('my meaning');
+ let rejectOnce=true;await page.route('**/api/assessment',async route=>{if(rejectOnce&&route.request().postDataJSON()?.action==='answer'){rejectOnce=false;await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Synthetic validation rejection'})});}else await route.continue();});
+ await first.getByRole('button',{name:'Commit answer'}).click();await expect(first.getByLabel('Meaning / response')).toBeEnabled();
+ await first.getByLabel('Meaning / response').fill('corrected meaning');
+ await first.getByRole('button',{name:'Commit answer'}).click();
+ await expect(first.getByText('Answer saved',{exact:true})).toBeVisible();
+ const url=page.url();await page.reload();expect(page.url()).toBe(url);
+ await expect(page.locator('.assessment-question').first().getByText('Answer saved',{exact:true})).toBeVisible();
+ expect(await page.locator('body').innerText()).not.toContain('private answer');
+ const second=page.locator('.assessment-question').nth(1);await second.getByLabel('Reading').fill('しけん');await second.getByLabel('Meaning / response').fill('my meaning');await second.getByRole('button',{name:'Commit answer'}).click();
+ await page.getByRole('button',{name:'Present passage and start timer'}).click();
+ await expect(page.getByRole('heading',{name:'Synthetic reading'})).toBeVisible();
+ const deadline=await page.getByTestId('reading-deadline').textContent();await page.reload();await expect(page.getByTestId('reading-deadline')).toHaveText(deadline!);
+ await expect(page.getByRole('button',{name:'Dictionary'})).toHaveCount(0);
+ for(const i of [2,3]){const q=page.locator('.assessment-question').nth(i);await q.getByLabel('Meaning / response').fill('my comprehension');await q.getByRole('button',{name:'Commit answer'}).click();}
+ expect(await page.locator('body').innerText()).not.toContain('private feedback');
+ await page.getByRole('button',{name:'Submit test'}).click();
+ await expect(page.getByRole('heading',{name:'Your cumulative sample'})).toBeVisible();
+ await expect(page.getByText('private answer 0',{exact:true})).toBeVisible();
+ const result=page.locator('.assessment-result').first();await result.getByLabel('Reading correct').check();await result.getByLabel('Meaning correct').check();await result.getByRole('button',{name:'Save component score'}).click();
+ await expect(page.getByText('1 / 1 correct in graded, unaided answers')).toBeVisible();
+ await page.reload();await expect(page.getByText('1 / 1 correct in graded, unaided answers')).toBeVisible();
+ await page.setViewportSize({width:375,height:812});await expect(page.getByRole('heading',{name:'Your cumulative sample'})).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ const forbidden=await page.request.post('/api/assessment',{headers:{origin:'https://invalid.example'},data:{action:'submit',sessionId:'00000000-0000-4000-8000-000000000001'}});expect(forbidden.status()).toBe(403);
+});
+test('unavailable weekly bank is explicit on the active library and has no empty start action',async({page})=>{
+ test.skip(!process.env.ASSESSMENT_EMPTY_TEST,'Read-only empty-bank smoke only');
+ await page.goto('/weekly');await expect(page.getByText('No approved questions with eligible targets are available in this scope. Question answers, target links and supporting language need explicit review before a scored test.')).toBeVisible();
+ await expect(page.getByRole('button',{name:'Start cumulative test'})).toBeDisabled();
+ await page.keyboard.press('Tab');await expect(page.getByRole('link',{name:'Skip to content'})).toBeFocused();
+ await page.screenshot({path:'.local/phase-4-weekly-desktop.png',fullPage:true});
+ await page.setViewportSize({width:375,height:812});await page.screenshot({path:'.local/phase-4-weekly-mobile.png',fullPage:true});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

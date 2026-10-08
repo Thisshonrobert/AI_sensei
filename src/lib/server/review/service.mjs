@@ -28,7 +28,7 @@ const strings=value=>Array.isArray(value)?value.filter(x=>typeof x==='string'&&x
 const evidenceWhere={verificationStatus:'verified',successor:null};
 const wordKey=(writing,reading)=>createHash('sha256').update(JSON.stringify([writing.normalize('NFC'),reading.normalize('NFC')])).digest('hex');
 async function addCard(tx,user,item,objective,prompt,answer,now,extra={}) {
- const prior=await tx.card.findFirst({where:{userId:user.id,itemId:item.id,objective,status:{not:'retired'}}});
+ const prior=await tx.card.findFirst({where:{userId:user.id,itemId:item.id,objective}});
  if(prior)return 0;
  const evidence=await tx.sourceEntry.findMany({where:{id:{in:prompt.sourceEntryIds},verificationStatus:'verified'},select:{id:true,sourceId:true},take:20});
  await tx.card.create({data:{userId:user.id,itemId:item.id,objective,promptSpecJson:{...prompt,sources:evidence,itemRevision:item.revision,templateVersion:1},answerSpecJson:answer,fsrsStateJson:initialState(now),...extra}});
@@ -50,12 +50,12 @@ async function contextReference(tx,content) {
  return {itemId:id,...typed};
 }
 
-export async function syncCards(db,userId,now=new Date()) {
+export async function syncCards(db,userId,now=new Date(),itemIds) {
  return locked(db,userId,async(tx,user)=>{
   let created=0;const gaps=[];
   // Explicit bounded pool. Larger intake is phase 6; never fetch the entire library into memory.
-  const items=await tx.item.findMany({where:{status:'approved',sourceEntries:{some:evidenceWhere}},take:500,orderBy:{id:'asc'},include:{vocabulary:true,kanji:true,grammar:true,sourceEntries:{where:evidenceWhere,take:12,select:{id:true,curriculumRole:true}},contentLinks:{where:{content:{status:'approved',successor:null}},take:20,include:{content:{include:{sourceEntries:{where:evidenceWhere,take:4}}}}}}});
-  const existingCards=await tx.card.findMany({where:{userId,status:{not:'retired'},itemId:{in:items.map(item=>item.id)}},select:{itemId:true,objective:true},take:1500});
+  const items=await tx.item.findMany({where:{...(itemIds?{id:{in:itemIds}}:{}),status:'approved',sourceEntries:{some:evidenceWhere}},take:500,orderBy:{id:'asc'},include:{vocabulary:true,kanji:true,grammar:true,sourceEntries:{where:evidenceWhere,take:12,select:{id:true,curriculumRole:true}},contentLinks:{where:{content:{status:'approved',successor:null}},take:20,include:{content:{include:{sourceEntries:{where:evidenceWhere,take:4}}}}}}});
+  const existingCards=await tx.card.findMany({where:{userId,itemId:{in:items.map(item=>item.id)}},select:{itemId:true,objective:true},take:1500});
   const existing=new Set(existingCards.map(card=>`${card.itemId}:${card.objective}`));
   const ensureCard=async(item,objective,prompt,answer,extra={})=>{
    const key=`${item.id}:${objective}`;if(existing.has(key))return 0;
@@ -118,9 +118,12 @@ async function counts(tx,user,now) {
  for(const g of groups){used[category(g)]+=g._count;used.total+=g._count;}
  return used;
 }
-function effectiveLimits(user) {
+const allowanceSchema=z.object({vocabulary:z.number().int().min(0).max(100),kanji:z.number().int().min(0).max(100),grammar:z.number().int().min(0).max(100),total:z.number().int().min(0).max(300)}).strict();
+function effectiveLimits(user,now=new Date()) {
  const settings=user.settingsJson.newCardLimits||limits;
- return Object.fromEntries(Object.entries(limits).map(([key,max])=>[key,Math.max(0,Math.min(max,Number.isInteger(settings[key])?settings[key]:max))]));
+ const daily=user.settingsJson.activationIncrease;
+ const extra=daily?.day===studyDay(now,user.timezone)?daily.extra:{};
+ return Object.fromEntries(Object.entries(limits).map(([key,fallback])=>[key,Math.max(0,Number.isInteger(settings[key])?settings[key]:fallback)+(extra?.[key]||0)]));
 }
 const elapsed=(session,now)=>Math.min(2147483647,(session.elapsedActiveMs||0)+(session.status==='active'&&session.activeSince?Math.max(0,now-session.activeSince):0));
 async function dueSelection(tx,user,now) {
@@ -133,17 +136,22 @@ async function dueSelection(tx,user,now) {
 }
 export async function startSession(db,userId,{now=new Date(),includeNew=false}={}) {
  return locked(db,userId,async(tx,user)=>{
-  const prior=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
+  const prior=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
   if(prior) {
    const view=await viewInTransaction(tx,user,prior,now);
    if(view.card){if(prior.status==='paused')await tx.studySession.update({where:{id:prior.id},data:{status:'active',activeSince:now}});return {id:prior.id};}
    await tx.studySession.update({where:{id:prior.id},data:{status:'completed',endedAt:now,elapsedActiveMs:elapsed(prior,now),activeSince:null}});
   }
   const {budget,dueCount,due,chosen}=await dueSelection(tx,user,now);
-  const used=await counts(tx,user,now), caps=effectiveLimits(user);
+  const used=await counts(tx,user,now), caps=effectiveLimits(user,now);
   if(includeNew&&dueCount<=budget&&dueCount===chosen.length) {
-   const pool=await tx.card.findMany({where:{userId,status:'new',...eligible(now)},take:100,orderBy:[{createdAt:'asc'},{id:'asc'}]});
-   for(const c of pool){const cat=category(c);if(used.total>=caps.total)break;if(used[cat]>=caps[cat]||chosen.some(s=>siblings(s,c)))continue;chosen.push(c);used[cat]++;used.total++;}
+   // Oldest explicit study first; retain the existing optional study-first reference flow afterward.
+   const waiting=await tx.$queryRaw`SELECT c.id FROM cards c JOIN user_items ui ON ui."userId"=c."userId" AND ui."itemId"=c."itemId" JOIN items i ON i.id=c."itemId" WHERE c."userId"=${userId}::uuid AND c.status='new' AND i.status='approved' AND ui."introducedAt" IS NOT NULL AND (c."buriedUntil" IS NULL OR c."buriedUntil"<=${now}) ORDER BY ui."introducedAt",c."createdAt",c.id LIMIT 500`;
+   const ready=await tx.card.findMany({where:{id:{in:waiting.map(c=>c.id)},userId,status:'new',...eligible(now)},take:500});
+   const ordered=new Map(ready.map(c=>[c.id,c]));
+   const other=await tx.card.findMany({where:{userId,status:'new',...eligible(now),item:{status:'approved',userItems:{none:{userId,introducedAt:{not:null}}}}},take:100,orderBy:[{createdAt:'asc'},{id:'asc'}]});
+   let added=0;
+   for(const c of [...waiting.map(c=>ordered.get(c.id)).filter(Boolean),...other]){const cat=category(c);if(used.total>=caps.total||added>=20)break;if(used[cat]>=caps[cat]||chosen.some(s=>siblings(s,c)))continue;chosen.push(c);used[cat]++;used.total++;added++;}
   }
   const snapshot={policyVersion:1,studyDay:studyDay(now,user.timezone),includeNew,introductionsPaused:dueCount>budget||dueCount>due.length,entries:chosen.map(c=>({cardId:c.id,stateVersion:c.stateVersion,role:c.status==='new'?'new':'review'}))};
   const overall=user.settingsJson.timeBudgetMinutes||30;
@@ -152,16 +160,18 @@ export async function startSession(db,userId,{now=new Date(),includeNew=false}={
   return {id:s.id};
  });
 }
-async function ownedSession(tx,userId,id){const s=await tx.studySession.findFirst({where:{id,userId}});if(!s)throw new ReviewError('Session ownership mismatch',403);return s;}
+async function ownedSession(tx,userId,id){const s=await tx.studySession.findFirst({where:{id,userId,mode:'daily'}});if(!s)throw new ReviewError('Session ownership mismatch',403);return s;}
 async function viewInTransaction(tx,user,session,now) {
  const entries=session.selectionSnapshotJson.entries;
- const completed=await tx.attempt.findMany({where:{sessionId:session.id,userId:user.id,reviewLogId:{not:null}},select:{cardId:true},take:108});
+ const completed=await tx.attempt.findMany({where:{sessionId:session.id,userId:user.id,reviewLogId:{not:null}},select:{cardId:true},take:400});
  const done=new Set(completed.map(a=>a.cardId));
+ const used=await counts(tx,user,now),caps=effectiveLimits(user,now);
  let card=null,attempt=null,deferred=0;
  for(const e of entries) {
   if(done.has(e.cardId))continue;
   const c=await tx.card.findFirst({where:{id:e.cardId,userId:user.id,...eligible(now),status:{in:['new','active']}}});
   if(!c||c.stateVersion!==e.stateVersion){deferred++;continue;}
+  if(c.status==='new'&&(used.total>=caps.total||used[category(c)]>=caps[category(c)])){deferred++;continue;}
   if(c.status==='new'&&await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},...eligible(now)}})>0){deferred++;continue;}
   if(!card){card=c;attempt=await tx.attempt.findFirst({where:{sessionId:session.id,userId:user.id,cardId:c.id,reviewLogId:null}});}
  }
@@ -169,7 +179,7 @@ async function viewInTransaction(tx,user,session,now) {
  const actionableDue=await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},...eligible(now)}});
  const repair=card?await tx.reviewLog.count({where:{userId:user.id,cardId:card.id,rating:1,reviewedAt:{gte:new Date(now.getTime()-30*86400000)}}}):0;
   const duration=elapsed(session,now);
-  return {sessionId:session.id,status:session.status,completed:done.size,total:entries.length,deferred,due,actionableDue,buriedDue:due-actionableDue,introductionsPaused:session.selectionSnapshotJson.introductionsPaused,elapsedActiveMs:duration,timeBudgetMinutes:session.timeBudgetMinutes,timeBudgetReached:duration>=session.timeBudgetMinutes*60000,used:await counts(tx,user,now),limits:effectiveLimits(user),repairSuggested:repair>=5,card:card?{id:card.id,itemId:card.itemId,objective:card.objective,status:card.status,stateVersion:card.stateVersion,prompt:card.promptSpecJson}:null,...(attempt?{attempt:{clientEventId:attempt.clientEventId,answer:attempt.answerJson,readingMatch:attempt.feedbackJson.readingMatch},answer:card.answerSpecJson,study:await studyContent(tx,card)}:{} )};
+  return {sessionId:session.id,status:session.status,completed:done.size,total:entries.length,deferred,due,actionableDue,buriedDue:due-actionableDue,introductionsPaused:session.selectionSnapshotJson.introductionsPaused,elapsedActiveMs:duration,timeBudgetMinutes:session.timeBudgetMinutes,timeBudgetReached:duration>=session.timeBudgetMinutes*60000,used,limits:caps,repairSuggested:repair>=5,card:card?{id:card.id,itemId:card.itemId,objective:card.objective,status:card.status,stateVersion:card.stateVersion,prompt:card.promptSpecJson}:null,...(attempt?{attempt:{clientEventId:attempt.clientEventId,answer:attempt.answerJson,readingMatch:attempt.feedbackJson.readingMatch},answer:card.answerSpecJson,study:await studyContent(tx,card)}:{} )};
 }
 export async function sessionView(db,userId,id,now=new Date()) {return locked(db,userId,async(tx,user)=>viewInTransaction(tx,user,await ownedSession(tx,userId,id),now));}
 async function selectedCard(tx,user,sessionId,cardId,stateVersion,now) {
@@ -191,7 +201,7 @@ export async function introduce(db,userId,sessionId,cardId,now=new Date()) {
   const raw=await tx.card.findFirst({where:{id:cardId,userId}});if(!raw)throw new ReviewError('Card ownership mismatch',403);
   const card=await selectedCard(tx,user,sessionId,cardId,raw.stateVersion,now);
   if(card.status==='new') {
-   const used=await counts(tx,user,now),caps=effectiveLimits(user);
+   const used=await counts(tx,user,now),caps=effectiveLimits(user,now);
    if(used.total>=caps.total||used[category(card)]>=caps[category(card)])throw new ReviewError('Daily introduction limit reached');
    const backlog=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},item:{status:'approved'}}});
    if(backlog>Math.min(100,user.settingsJson.reviewCardBudget||40))throw new ReviewError('Introductions paused for backlog');
@@ -248,7 +258,7 @@ export async function updateBudget(db,userId,minutes) {
  z.number().int().min(5).max(60).parse(minutes);
  return locked(db,userId,async(tx,user)=>{
   await tx.user.update({where:{id:userId},data:{settingsJson:{...user.settingsJson,timeBudgetMinutes:minutes}}});
-  const open=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}}});
+  const open=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}}});
   if(open)await tx.studySession.update({where:{id:open.id},data:{timeBudgetMinutes:open.selectionSnapshotJson.includeNew?minutes:Math.min(minutes,user.settingsJson.reviewBudgetMinutes||20)}});
   return {timeBudgetMinutes:minutes};
  });
@@ -261,6 +271,67 @@ export async function markUnfamiliar(db,userId,itemId) {
   return {needsAttention:true};
  });
 }
+export async function studyStatus(db,userId,itemId) {
+ const learner=await db.userItem.findUnique({where:{userId_itemId:{userId,itemId}},select:{introducedAt:true}});
+ const item=await db.item.findUnique({where:{id:itemId},select:{kind:true,sourceEntries:{where:{...evidenceWhere,curriculumRole:'core_kanji'},take:1,select:{id:true}}}});
+ if(!item)throw new ReviewError('Item unavailable',404);
+ const cards=await db.card.findMany({where:{userId,itemId},select:{objective:true,status:true},take:10});
+ const expected=item.kind==='kanji'?(item.sourceEntries.length?['kanji_meaning','kanji_reading_context']:[]):[item.kind==='grammar'?'grammar_cloze':'vocab_reading_meaning'];
+ return {introducedAt:learner?.introducedAt?.toISOString()||null,waiting:cards.filter(c=>c.status==='new').length,active:cards.filter(c=>c.status==='active').length,paused:cards.filter(c=>['suspended','retired'].includes(c.status)).length,missing:expected.filter(o=>!cards.some(c=>c.objective===o)),optional:item.kind==='kanji'&&!expected.length};
+}
+export async function markStudied(db,userId,itemId,now=new Date()) {
+ uuid.parse(itemId);
+ await locked(db,userId,async tx=>{
+  if(!await tx.item.findFirst({where:{id:itemId,status:'approved'},select:{id:true}}))throw new ReviewError('Approved item unavailable',404);
+  const learner=await tx.userItem.findUnique({where:{userId_itemId:{userId,itemId}}});
+  await tx.userItem.upsert({where:{userId_itemId:{userId,itemId}},create:{userId,itemId,familiarity:'introduced',introducedAt:now},update:{...(!learner?.introducedAt?{introducedAt:now}:{}),...(learner?.familiarity==='unseen'?{familiarity:'introduced'}:{})}});
+ });
+ // Preparation is source-gated and dormant; retries never recreate retired objectives.
+ await syncCards(db,userId,now,[itemId]);
+ return studyStatus(db,userId,itemId);
+}
+export async function updateActivationLimits(db,userId,values) {
+ const parsed=allowanceSchema.parse(values);
+ return locked(db,userId,async(tx,user)=>{
+  await tx.user.update({where:{id:userId},data:{settingsJson:{...user.settingsJson,newCardLimits:parsed}}});
+  return {limits:parsed};
+ });
+}
+export async function addActivationBatch(db,userId,clientEventId,values,now=new Date()) {
+ uuid.parse(clientEventId);const parsed=allowanceSchema.parse(values);
+ if(!parsed.total||!parsed.vocabulary&&!parsed.kanji&&!parsed.grammar)throw new ReviewError('Choose a nonempty activation increase',400);
+ return locked(db,userId,async(tx,user)=>{
+  const day=studyDay(now,user.timezone),prior=user.settingsJson.activationIncrease;
+  const daily=prior?.day===day?prior:{day,extra:{vocabulary:0,kanji:0,grammar:0,total:0}};
+  const receipts=user.settingsJson.activationBatchReceipts||[];
+  const repeat=receipts.find(e=>e.id===clientEventId);
+  if(repeat){if(!isDeepStrictEqual(repeat.values,parsed))throw new ReviewError('Batch retry differs from its saved request');return {limits:effectiveLimits(user,now),appliedDay:repeat.day,studyDay:day};}
+  if(receipts.filter(e=>e.day===day).length>=100)throw new ReviewError('Daily batch request limit reached');
+  const extra=Object.fromEntries(Object.keys(limits).map(k=>[k,daily.extra[k]+parsed[k]]));
+  // A bounded operational range; never expand one session to the entire pool.
+  if(Object.values(extra).some(v=>v>1000))throw new ReviewError('Daily activation increase is too large',400);
+  const settingsJson={...user.settingsJson,activationIncrease:{day,extra},activationBatchReceipts:[...receipts,{id:clientEventId,day,values:parsed}]};
+  await tx.user.update({where:{id:userId},data:{settingsJson}});
+  return {limits:effectiveLimits({...user,settingsJson},now),appliedDay:day,studyDay:day};
+ });
+}
+async function poolSummary(tx,user,now){
+ const day=studyDay(now,user.timezone);
+ const [row]=await tx.$queryRaw`WITH pool AS (
+  SELECT ui."introducedAt",i.kind,
+   CASE WHEN i.kind='kanji' THEN CASE WHEN EXISTS(SELECT 1 FROM source_entries se WHERE se."itemId"=i.id AND se."curriculumRole"='core_kanji' AND se."verificationStatus"='verified') THEN 2 ELSE 0 END ELSE 1 END expected,
+   count(c.id)::int objectives,count(c.id) FILTER(WHERE c.status='new')::int waiting,
+   count(c.id) FILTER(WHERE c.status='active')::int active
+  FROM user_items ui JOIN items i ON i.id=ui."itemId" LEFT JOIN cards c ON c."itemId"=i.id AND c."userId"=ui."userId"
+  WHERE ui."userId"=${user.id}::uuid AND ui."introducedAt" IS NOT NULL AND i.status='approved'
+  GROUP BY ui."itemId",ui."introducedAt",i.id,i.kind
+ ) SELECT count(*) FILTER(WHERE ("introducedAt" AT TIME ZONE ${user.timezone})::date=${day}::date)::int AS "studiedToday",
+ count(*) FILTER(WHERE waiting>0)::int AS "waitingItems",COALESCE(sum(waiting),0)::int AS "waitingObjectives",
+ count(*) FILTER(WHERE waiting>0 AND active>0)::int AS "partialItems",
+ count(*) FILTER(WHERE objectives<expected OR expected=0)::int AS "blockedItems",
+ COALESCE(sum(GREATEST(expected-objectives,0)),0)::int AS "missingObjectives" FROM pool`;
+ return row;
+}
 export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
  const progress={};
  for(const kind of ['vocabulary','kanji','grammar']){
@@ -269,14 +340,14 @@ export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
   progress[kind]={total:await db.item.count({where}),introduced:await db.item.count({where:{...where,userItems:{some:{userId,introducedAt:{not:null}}}}})};
  }
  const user=await db.user.findUnique({where:{id:userId}});
- if(!user)return {progress,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0,total:0},limits,timeBudgetMinutes:30,introductionsPaused:false,sessionId:null};
+ if(!user)return {progress,studiedToday:0,waitingItems:0,waitingObjectives:0,partialItems:0,blockedItems:0,missingObjectives:0,configuredLimits:limits,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0,total:0},limits,timeBudgetMinutes:30,introductionsPaused:false,sessionId:null};
  return locked(db,userId,async(tx,u)=>{
   const {budget,dueCount,due,chosen}=await dueSelection(tx,u,now);
-  const active=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
+  const active=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
   const view=active?await viewInTransaction(tx,u,active,now):null;
   const actionableDue=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},...eligible(now)}});
   const missingGrammar=await tx.item.count({where:{kind:'grammar',status:'approved',cards:{none:{userId,objective:'grammar_cloze',status:{not:'retired'}}}}});
   const missingContext=await tx.item.count({where:{kind:'kanji',status:'approved',sourceEntries:{some:{verificationStatus:'verified',curriculumRole:'core_kanji'}},cards:{none:{userId,objective:'kanji_reading_context',status:{not:'retired'}}}}});
-  return {progress,reviewCount:view?.card?view.total-view.completed-view.deferred:chosen.length,sessionId:view?.card?active.id:null,sessionStatus:active?.status,due:dueCount,actionableDue,buriedDue:dueCount-actionableDue,deferred:view?.deferred||0,contentGaps:missingGrammar+missingContext,introductionsPaused:dueCount>budget||dueCount>due.length,used:await counts(tx,u,now),limits:effectiveLimits(u),timeBudgetMinutes:u.settingsJson.timeBudgetMinutes||30};
+  return {progress,...await poolSummary(tx,u,now),configuredLimits:u.settingsJson.newCardLimits||limits,reviewCount:view?.card?view.total-view.completed-view.deferred:chosen.length,sessionId:view?.card?active.id:null,sessionStatus:active?.status,due:dueCount,actionableDue,buriedDue:dueCount-actionableDue,deferred:view?.deferred||0,contentGaps:missingGrammar+missingContext,introductionsPaused:dueCount>budget||dueCount>due.length,used:await counts(tx,u,now),limits:effectiveLimits(u,now),timeBudgetMinutes:u.settingsJson.timeBudgetMinutes||30};
  });
 }

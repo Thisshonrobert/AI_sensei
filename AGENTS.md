@@ -34,10 +34,10 @@ The approved stack is Next.js, React, TypeScript, Tailwind, PostgreSQL, Prisma, 
 See [docs/repository-structure.md](docs/repository-structure.md) for current folders and deferred module boundaries.
 
 - `FINALIZED_PROJECT_PLAN.md` — authoritative specification; retain its location and amendments.
-- `src/app/` — Next.js reference/item/source pages, daily dashboard and persistent review UI; local mutations use the review route.
+- `src/app/` — Next.js reference/item/source pages, daily dashboard, persistent review and weekly assessment UI; local mutations use feature-specific routes.
 - `src/components/` — shared UI only when actual screens need it.
 - `src/lib/server/` — server modules; begin with `content/` for verified import. Review, assessment, and generation arrive in their respective phases.
-- `prisma/` — staging, canonical provenance, persistent learner recall and session timing migrations; assessment/generation remain deferred.
+- `prisma/` — staging, canonical provenance, persistent learner recall and assessment/session timing migrations; generation remains deferred.
 - `scripts/` — bounded local import/backup utilities as their phases require them.
 - `tests/` — focused unit, PostgreSQL integration, and study/resume browser checks as behavior exists.
 - `docs/` — engineering guidance, existing illustrative extraction templates, and private-use UI references.
@@ -55,7 +55,7 @@ The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/arc
 4. One Card measures one stable recall objective. Vocabulary requires **reading plus selected meaning** with one rating/state; either failure means Again. Core kanji meaning and source-backed whole-word contextual reading have separate states. Missing context blocks the reading card. Incidental kanji cards remain opt-in.
 5. Relationships **MUST NOT** propagate ratings. Practice, reading aids, explanations, tests, AI feedback, and dictionary lookups **MUST NOT** update FSRS in V1.
 6. A review atomically writes Attempt, immutable ReviewLog, and Card state. Event IDs are idempotent; stale state versions conflict. Store complete library state/log, configuration, version, and prompt snapshots.
-7. Initial daily ceilings are five vocabulary, two core-kanji objective cards, one grammar card, and eight total. Backlog can pause introductions. Sibling burying changes presentation eligibility, not due dates or another card's state.
+7. Initial daily activation allowances are five vocabulary, two core-kanji objective cards, one grammar card, and eight total. The implemented Phase 4 extension (Master Plan §8) separates unlimited explicit study recording from a waiting review pool and persisted adjustable activation allowances/extra batches; preserve backlog pauses and sibling separation. Sibling burying changes presentation eligibility, not due dates or another card's state.
 8. Scored tests use approved questions and introduced/learner-enabled baseline targets; unseen N2 is excluded. Selection and timed deadlines survive refresh. Short valid tests beat fabricated quotas.
 9. A complete N5–N3 baseline is optional. Zero baseline rows must work. Untracked supporting language is not automatically unknown or known; explicit unresolved sense/reading/grammar problems require review before approved reuse.
 10. AI is optional, on demand, bounded, and draft-only. Human approval precedes reusable publication; accepted answers/rubrics precede scored/scheduled questions. No paid fallback; generation failure leaves review available.
@@ -65,13 +65,15 @@ The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/arc
 
 ## Tooling & Verification
 
-Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod import, reference pages, persistent FSRS recall and Phase 3 personal-release UI/recovery are implemented. See [docs/phase-3-handoff.md](docs/phase-3-handoff.md) for evidence and the pending learner-paced acceptance gate. Three real batches were explicitly accepted without PDF comparison and promoted with exact record/hash approvals; source transcription is not independently verified. Draft questions/additions remain unresolved. Do not claim checks passed until their real commands run. Future batches require their own human decisions; acceptance is limited to the existing three batches.
+Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod import, reference pages, persistent FSRS recall and Phase 3 personal-release UI/recovery are implemented. The learner accepted Phase 3 and authorized Phase 4 on 8 October 2026; see [docs/phase-3-handoff.md](docs/phase-3-handoff.md) and [docs/phase-4-handoff.md](docs/phase-4-handoff.md). Three real batches were explicitly accepted without PDF comparison and promoted with exact record/hash approvals; source transcription is not independently verified. Deferred real questions still require explicit answer/target/support approval. Do not claim checks passed until their real commands run. Future batches require their own human decisions; acceptance is limited to the existing three batches.
 
 Use Bun as the primary package manager/script runner (`packageManager` and `bun.lock`); retain Node for database/import/server execution. Use `rtk bun run test` for the existing Node suite, not bare `bun test`.
 
 Prefix shell commands with `rtk`, using `rtk proxy` for commands without a suitable filter, as required by the user-provided RTK instructions. Never expose database credentials, API keys, raw books, or learner history in command output.
 
 ## Documentation
+
+The learner accepted Phase 4 except for Graphify and approved its flexible-study extension on 8 October 2026. The extension is implemented with automated §18 evidence in [docs/phase-4-extension-handoff.md](docs/phase-4-extension-handoff.md); Graphify awaits integration confirmation. Study starts 10 October; 15 December 2026 is a provisional preparation deadline, not a verified exam date. Real question approval remains separate; Phase 5 is not authorized by this extension.
 
 **Yes, concise documentation is necessary** for source verification, scheduler correctness, phase acceptance, backup recovery, and safe handoffs. It is not a development course. Read [docs/documentation.md](docs/documentation.md) for the document map and update rules. Keep the Master Plan authoritative and avoid copying it into competing specifications.
 

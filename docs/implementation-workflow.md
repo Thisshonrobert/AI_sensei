@@ -1,10 +1,12 @@
 # Implementation workflow
 
-Authority: Master Plan §§16–19. Current state includes local PostgreSQL, preserved import/reference features, persistent recall and Phase 3 personal-release implementation. Source batches retain acceptance without PDF comparison. See [Phase 3 handoff](phase-3-handoff.md) for verification and the pending learner-paced session gate. Phase 4 has not started.
+Authority: Master Plan §§16–19. Current state includes PostgreSQL, preserved import/reference features, persistent recall and learner-accepted Phase 3 personal release. Source batches retain acceptance without PDF comparison. Phase 4 implementation is authorized by the learner's 8 October 2026 request; see [Phase 4 handoff](phase-4-handoff.md) for assessment verification and remaining live-content approval.
 
 ## Ordered delivery
 
-Phase 3 recovery, dashboard, study backs and lookup are implemented; authentic time-budget usage remains to be accepted. New Graphify generation waits for confirmed integration and a clean, up-to-date default branch.
+Phase 3 recovery, dashboard, study backs and lookup are implemented and learner-accepted. Phase 4 reuses the existing content/session/attempt records without FSRS writes. New Graphify generation waits for confirmed integration and a clean, up-to-date default branch.
+
+On 8 October 2026 the learner accepted Phase 4 except for Graphify and approved the **Phase 4 extension: flexible study completion and review activation** (Master Plan §§8, 10, 12, 18). The extension is implemented and automatically verified; see [handoff](phase-4-extension-handoff.md). The study window starts 10 October, with 15 December as a provisional deadline; no personalized daily quota is set. Question publication gates remain separate, and Phase 5 is not authorized by this decision.
 
 | Phase | Working deliverable | Boundary |
 |---|---|---|
@@ -12,6 +14,7 @@ Phase 3 recovery, dashboard, study backs and lookup are implemented; authentic t
 | 2 | Reliable daily recall: objectives, ts-fsrs, review UI, limits, persistence | Atomic/idempotent events; independent states; no practice ratings |
 | 3 | Usable personal release: daily flow, dashboard, grammar explanation/comparison, backup/export, external listening, Takoboto | Useful without AI; tested restore; authentic time-budget usage |
 | 4 | Cumulative assessment: question bank, eligible selection, weekly timed reading/results | Persisted selection/deadline; no FSRS writes from tests |
+| 4 extension | Explicit study completion on vocabulary/kanji/grammar pages, waiting review pool, adjustable activation batches and dashboard counts | Implemented, automated gates verified; no synthetic recall, no automatic mass activation, unchanged approved-question gates |
 | 5 | Generated contextual practice: prompt export/draft import, generation provenance, validation, reading approval/UI | Optional free automation; stored aids; zero baseline works |
 | 6 | Incremental book growth and optional personal baseline | Preserve corrections/history; no bulk unseen activation |
 | 7 | Observed-need extensions | No speculative audio, reminders, production feedback infrastructure |
