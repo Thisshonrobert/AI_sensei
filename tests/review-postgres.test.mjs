@@ -2,11 +2,36 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { createUser, syncCards, startSession, sessionView, introduce, commitResponse, rate, stopSession } from '../src/lib/server/review/service.mjs';
+import { createUser, syncCards, startSession, sessionView, introduce, commitResponse, rate, stopSession, dashboard, updateBudget, markUnfamiliar } from '../src/lib/server/review/service.mjs';
 import { previewPromotion, recordApproval, promote } from '../src/lib/server/content/canonical-import.mjs';
+import { grammarComparisons, studyContent } from '../src/lib/server/content/study.mjs';
 const enabled=!!process.env.REVIEW_TEST_URL;
 let db=enabled?new PrismaClient({datasourceUrl:process.env.REVIEW_TEST_URL,errorFormat:'minimal'}):null;
 test.after(async()=>{await db?.$disconnect();});
+test('personal release dashboard, active time and attention preserve recall evidence', {skip:!enabled}, async()=>{
+ const u=await fixture({count:2});
+ await updateBudget(db,u.id,25);
+ await assert.rejects(()=>updateBudget(db,u.id,0));
+ const s=await startSession(db,u.id,{now,includeNew:true});
+ let v=await sessionView(db,u.id,s.id,now);
+ assert.equal(v.timeBudgetMinutes,25); assert.equal(v.elapsedActiveMs,0); assert.equal(v.study,undefined);
+ await markUnfamiliar(db,u.id,v.card.itemId);
+ await introduce(db,u.id,s.id,v.card.id,now);
+ const before=await db.card.findUnique({where:{id:v.card.id}});
+ await markUnfamiliar(db,u.id,before.itemId);
+ const learner=await db.userItem.findUnique({where:{userId_itemId:{userId:u.id,itemId:before.itemId}}});
+ assert.equal(learner.needsAttention,true); assert.equal(learner.familiarity,'introduced');
+ assert.equal(learner.introducedAt.toISOString(),now.toISOString());
+ assert.deepEqual(await db.card.findUnique({where:{id:before.id}}),before);
+ const d=await dashboard(db,u.id,now);assert.equal(d.progress.vocabulary.introduced,1);assert.ok(d.progress.vocabulary.total>=2);assert.equal(d.sessionId,s.id);
+ const stop=new Date(+now+5*60000);await stopSession(db,u.id,s.id,stop);await stopSession(db,u.id,s.id,new Date(+stop+60000));
+ v=await sessionView(db,u.id,s.id,new Date(+stop+60*60000));assert.equal(v.elapsedActiveMs,5*60000);
+ const restart=new Date(+stop+60*60000);await startSession(db,u.id,{now:restart});
+ v=await sessionView(db,u.id,s.id,new Date(+restart+20*60000));assert.equal(v.elapsedActiveMs,25*60000);
+ assert.equal(v.timeBudgetReached,true);assert.equal(v.used.vocabulary,1);
+ assert.equal(await db.reviewLog.count({where:{userId:u.id}}),0);
+ const other=await fixture({count:1});const empty=await startSession(db,other.id,{now,includeNew:false});assert.equal((await sessionView(db,other.id,empty.id,now)).timeBudgetMinutes,20);
+});
 const now=new Date('2026-10-06T10:00:00Z');
 async function fixture({count=8,kanji=false}={}) {
  const sourceId=randomUUID();
@@ -88,7 +113,7 @@ test('pool is dormant and unresolved grammar/incidental kanji stay excluded', {s
  assert.equal(await db.card.count({where:{userId:u.id,objective:'grammar_cloze'}}),0);
 });
 test('duplicate/concurrent event has one effect; stale different event conflicts; component failure is Again', {skip:!enabled}, async()=>{
- const u=await fixture();const input=await ready(u);
+ const u=await fixture({count:2});const input=await ready(u);
  const pair=await Promise.all([rate(db,u.id,input,now),rate(db,u.id,input,now)]);
  assert.deepEqual(pair[0],pair[1]);
  assert.equal(await db.reviewLog.count({where:{userId:u.id}}),1);
@@ -100,8 +125,19 @@ test('duplicate/concurrent event has one effect; stale different event conflicts
  const next=await ready(u);
  assert.equal((await rate(db,u.id,{...next,rating:4,components:{readingCorrect:true,meaningCorrect:false}},now)).rating,1);
 });
+
+test('existing pool synchronization batches card lookup and preserves every card state', {skip:!enabled}, async()=>{
+ const u=await fixture({count:2});
+ const before=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});
+ let probes=0;
+ const measured=db.$extends({query:{card:{findFirst({args,query}){probes++;return query(args);}}}});
+ const result=await syncCards(measured,u.id,now);
+ assert.equal(result.created,0);
+ assert.equal(probes,0,'Existing cards must not incur one remote lookup per objective');
+ assert.deepEqual(await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}}),before);
+});
 test('transaction rollback leaves committed response but no orphan log or changed state', {skip:!enabled}, async()=>{
- const u=await fixture();const input=await ready(u);
+ const u=await fixture({count:1});const input=await ready(u);
  const before=await db.card.findUnique({where:{id:input.cardId}});
  // A real database failure after the review log insert, not a mocked transaction.
  await db.$executeRawUnsafe(`CREATE FUNCTION fail_review_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic rollback'; END $$`);
@@ -115,7 +151,7 @@ test('transaction rollback leaves committed response but no orphan log or change
  assert.equal((await rate(db,u.id,input,now)).stateVersion,1);
 });
 test('stop, disconnect/restart and resume preserve committed response, selection and due dates', {skip:!enabled}, async()=>{
- const u=await fixture();const input=await ready(u);
+ const u=await fixture({count:1});const input=await ready(u);
  const selection=(await db.studySession.findUnique({where:{id:input.sessionId}})).selectionSnapshotJson;
  const before=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});
  await stopSession(db,u.id,input.sessionId,now);await db.$disconnect();
@@ -222,4 +258,57 @@ test('contextual reading, vocabulary and kanji meaning successes never propagate
  const readingAgain=await db.card.findUnique({where:{id:reading.id}});
  assert.deepEqual(readingAgain.fsrsStateJson,readingAfter.fsrsStateJson);assert.equal(readingAgain.stateVersion,readingAfter.stateVersion);assert.equal(readingAgain.dueAt.toISOString(),readingAfter.dueAt.toISOString());
  assert.deepEqual((await db.card.findUnique({where:{id:meaning.id}})).fsrsStateJson,meaning.fsrsStateJson);
+});
+
+test('approved grammar comparisons are reciprocal, validated and read-only; reveal uses stored formation', {skip:!enabled}, async()=>{
+ const u=await fixture({count:1});const a=await approvedGrammar(u),b=await approvedGrammar(u);
+ const comparisonId=randomUUID(),examples=[randomUUID(),randomUUID()];
+ await db.$transaction(async tx=>{
+  for(const [i,itemId] of [a,b].entries())await tx.content.create({data:{id:examples[i],kind:'sentence',origin:'user',status:'approved',revision:1,payloadJson:{japanese:`synthetic example ${i}`,translation:`meaning ${i}`},items:{create:{itemId,role:'target'}}}});
+  await tx.content.create({data:{id:comparisonId,kind:'explanation',origin:'user',status:'approved',revision:1,payloadJson:{explanationType:'grammar_comparison',grammarItemIds:[a,b],difference:'synthetic checked distinction',examples:[a,b].map((grammarItemId,i)=>({grammarItemId,contentId:examples[i]}))},items:{create:[{itemId:a,role:'target'},{itemId:b,role:'target'}]}}});
+ });
+ const before=await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}});
+ assert.deepEqual(await grammarComparisons(db,a),await grammarComparisons(db,b));
+ assert.equal((await grammarComparisons(db,a)).length,1);
+ const card=before.find(c=>c.itemId===a);const back=await studyContent(db,card);assert.equal(back.grammar.guidanceLabel,'General guidance');assert.deepEqual(back.grammar.formation,['noun + もの']);
+ assert.deepEqual(await db.card.findMany({where:{userId:u.id},orderBy:{id:'asc'}}),before);
+ assert.equal(await db.userItem.count({where:{userId:u.id}}),0);
+ await assert.rejects(()=>db.content.create({data:{kind:'explanation',origin:'user',status:'approved',revision:1,payloadJson:{explanationType:'grammar_comparison',grammarItemIds:[a,a],difference:'bad',examples:[]}}}));
+ const draft=await db.content.create({data:{kind:'explanation',origin:'user',status:'draft',revision:1,payloadJson:{explanationType:'grammar_comparison'},items:{create:{itemId:a,role:'target'}}}});
+ assert.ok(draft);assert.equal((await grammarComparisons(db,a)).length,1);
+ // This scenario selects its own comparison targets, not cards from earlier fixtures.
+ await db.card.updateMany({where:{userId:u.id,itemId:{notIn:[a,b]}},data:{buriedUntil:new Date(+now+86400000)}});
+ const user=await db.user.findUnique({where:{id:u.id}});await db.user.update({where:{id:u.id},data:{settingsJson:{...user.settingsJson,newCardLimits:{vocabulary:0,kanji:0,grammar:1,total:8}}}});
+ const session=await startSession(db,u.id,{now,includeNew:true});let view=await sessionView(db,u.id,session.id,now);
+ assert.equal(view.card.objective,'grammar_cloze');assert.equal(view.study,undefined);
+ const first=await introduce(db,u.id,session.id,view.card.id,now);assert.ok(first.study.grammar.formation.length);
+ view=await sessionView(db,u.id,session.id,now);assert.equal(view.study,undefined);
+ await commitResponse(db,u.id,{sessionId:session.id,cardId:view.card.id,stateVersion:0,clientEventId:randomUUID(),answer:{response:'もの'}},now);
+ view=await sessionView(db,u.id,session.id,now);assert.equal(view.study.grammar.guidanceLabel,'General guidance');
+ assert.equal(await db.reviewLog.count({where:{userId:u.id}}),0);
+});
+
+test('existing hash-approved import publishes a curated comparison to both grammar details', {skip:!enabled}, async()=>{
+ const u=await fixture({count:1}),a=await approvedGrammar(u),b=await approvedGrammar(u);
+ const examples=[];for(const itemId of [a,b]){const sentence=await db.content.create({data:{kind:'sentence',origin:'user',status:'approved',revision:1,payloadJson:{japanese:'synthetic approved example'},items:{create:{itemId,role:'target'}}}});examples.push({grammarItemId:itemId,contentId:sentence.id});}
+ const evidence=await db.sourceEntry.findFirst({where:{itemId:a,importBatchId:{not:null}}});const original=await db.importBatch.findUnique({where:{id:evidence.importBatchId}});
+ const batch=await db.importBatch.create({data:{sourceId:original.sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:original.stagedJson,validationErrorsJson:[]}});
+ const {itemId:unused,...typed}=await db.grammar.findUnique({where:{itemId:a}});
+ const selection={batchId:batch.id,records:[{recordKey:'pattern',family:'entry',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,match:{mode:'reuse',itemId:a,expectedRevision:1},typed,fieldPresence:{meanings:'supplied'},fieldOrigins:{},citations:[],kanjiLinks:[],additions:[{key:'comparison',origin:'generated',unresolved:false,citations:[],payload:{explanationType:'grammar_comparison',grammarItemIds:[a,b],difference:'synthetic human-approved comparison',examples}}]}]};
+ await assert.rejects(()=>previewPromotion(db,{...selection,records:[{...selection.records[0],match:{mode:'correct',itemId:a,expectedRevision:1}}]}),/corrections separately/);
+ const preview=await previewPromotion(db,selection);await recordApproval(db,selection,'pattern',preview.records[0].confirmationToken,'synthetic-test');
+ const secondEvidence=await db.sourceEntry.findFirst({where:{itemId:b,importBatchId:{not:null}}});const secondOriginal=await db.importBatch.findUnique({where:{id:secondEvidence.importBatchId}});
+ const correctionBatch=await db.importBatch.create({data:{sourceId:secondOriginal.sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:secondOriginal.stagedJson,validationErrorsJson:[]}});
+ const {itemId:ignored,...secondTyped}=await db.grammar.findUnique({where:{itemId:b}});
+ const correction={batchId:correctionBatch.id,records:[{...selection.records[0],match:{mode:'correct',itemId:b,expectedRevision:1},typed:{...secondTyped,explanationEn:'synthetic corrected guidance'},additions:[]}]};
+ const correctionPreview=await previewPromotion(db,correction);await recordApproval(db,correction,'pattern',correctionPreview.records[0].confirmationToken,'synthetic-test');await promote(db,correction);
+ await assert.rejects(()=>promote(db,selection),/approval/i);
+ const refreshed=await previewPromotion(db,selection);assert.notEqual(refreshed.records[0].confirmationToken,preview.records[0].confirmationToken);
+ await recordApproval(db,selection,'pattern',refreshed.records[0].confirmationToken,'synthetic-test');await promote(db,selection);
+ assert.equal((await grammarComparisons(db,a)).length,1);assert.deepEqual(await grammarComparisons(db,a),await grammarComparisons(db,b));
+ const before=await db.content.count();await promote(db,selection);assert.equal(await db.content.count(),before);
+ const laterBatch=await db.importBatch.create({data:{sourceId:secondOriginal.sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:secondOriginal.stagedJson,validationErrorsJson:[]}});
+ const later={...correction,batchId:laterBatch.id,records:[{...correction.records[0],match:{mode:'correct',itemId:b,expectedRevision:2},typed:{...secondTyped,explanationEn:'synthetic later correction'}}]};
+ const laterPreview=await previewPromotion(db,later);await recordApproval(db,later,'pattern',laterPreview.records[0].confirmationToken,'synthetic-test');await promote(db,later);
+ assert.equal((await grammarComparisons(db,a)).length,0);assert.equal((await grammarComparisons(db,b)).length,0);
 });

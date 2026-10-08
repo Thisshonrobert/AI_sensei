@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('reference navigation, item provenance, source return, keyboard and mobile wrapping', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Your Japanese reference shelf' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'A little Japanese, every day.' })).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
   for (const kind of ['Vocabulary', 'Kanji', 'Grammar']) {
@@ -11,9 +11,29 @@ test('reference navigation, item provenance, source return, keyboard and mobile 
     const item = page.locator('[data-item-link]').first();
     await expect(item).toBeVisible();
     await item.click();
-    await expect(page.getByRole('heading', { name: 'Sources & evidence' })).toBeVisible();
-    await expect(page.getByText('Accepted without PDF comparison', { exact: true }).first()).toBeVisible();
-    const citationLink = page.locator('[data-source-link]').first();
+    await expect(page).toHaveURL(new RegExp(`/${kind.toLowerCase()}/[0-9a-f-]+$`));
+    const firstUrl=page.url();
+    const navigation=page.getByRole('navigation',{name:'Entry navigation'});
+    await expect(navigation.getByRole('button',{name:'Previous entry',exact:true})).toBeDisabled();
+    const next=navigation.getByRole('link',{name:'Next entry',exact:true});
+    const nextHref=await next.getAttribute('href');
+    await next.focus();await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new URL(nextHref!,firstUrl).href);
+    await page.reload();
+    await page.getByRole('navigation',{name:'Entry navigation'}).getByRole('link',{name:'Previous entry',exact:true}).click();
+    await expect(page).toHaveURL(firstUrl);
+    await page.setViewportSize({width:375,height:812});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:`.local/detail-${kind.toLowerCase()}-mobile.png`,fullPage:true});
+    await page.setViewportSize({width:1280,height:800});
+    const evidence=page.locator('.source-disclosure');
+    await expect(evidence).not.toHaveAttribute('open');
+    await evidence.locator('summary').first().click();
+    const record=evidence.locator('.inline-evidence').filter({hasText:'Accepted without PDF comparison'}).first();
+    await record.locator('summary').first().click();
+    await expect(record.locator('[data-evidence-record]').first()).toBeVisible();
+    await expect(record.getByText('Accepted without PDF comparison', { exact: true }).first()).toBeVisible();
+    const citationLink = record.locator('[data-source-link]').first();
     const citationUrl = await citationLink.getAttribute('href');
     await citationLink.click();
     await expect(page.getByRole('heading', { name: 'Source records' })).toBeVisible();
@@ -26,6 +46,9 @@ test('reference navigation, item provenance, source return, keyboard and mobile 
     await page.setViewportSize({ width: 1280, height: 800 });
   }
   await page.goto('/kanji');await page.locator('[data-item-link]').first().click();
+  await page.locator('.source-disclosure > summary').click();
+  const dictionaryEvidence=page.locator('.source-disclosure .inline-evidence').filter({hasText:'Dictionary · curated'}).first();
+  await dictionaryEvidence.locator('summary').first().click();
   await expect(page.getByText('Dictionary · curated', { exact: true }).first()).toBeVisible();
   await page.goto('/grammar');await page.locator('[data-item-link]').first().click();
   await expect(page.getByText('Generated', { exact: true }).first()).toBeVisible();
@@ -63,7 +86,7 @@ test('accepted supplemental meanings and name readings visibly identify AI assis
       await page.goto(href);
       if (await page.locator('[data-ai-addition]').count()) {
         await expect(page.locator('[data-ai-addition]').first()).toHaveText('Added by AI');
-        await expect(page.locator('[data-ai-limitations]').first()).toContainText('not independently verified');
+        await expect(page.locator('[data-content-id] [data-ai-limitations]')).toHaveCount(0);
         found=true;break;
       }
     }
@@ -87,18 +110,30 @@ test('all grammar points show their generated English explanation prominently', 
   }
 });
 
-test('all kanji show cited mnemonic excerpts and WaniKani radical combinations', async ({page}) => {
-  test.setTimeout(120_000);
+test('all kanji show complete local mnemonics and unique words with readings, without per-word evidence', async ({page}) => {
+  test.setTimeout(300_000);
   await page.goto('/kanji');
   await expect(page.locator('[data-item-link]')).toHaveCount(38);
   const links = await page.locator('[data-item-link]').evaluateAll(elements => elements.map(element => element.getAttribute('href')!));
   for (const href of links) {
     await page.goto(href);
-    const reference = page.locator('[data-wanikani-reference]');
+    const reference = page.locator('.content-block > [data-wanikani-reference]');
     await expect(reference).toBeVisible();
     await expect(reference.getByText('Radical combination', {exact:true})).toBeVisible();
-    await expect(reference.getByText('Meaning mnemonic · excerpt', {exact:true})).toBeVisible();
-    await expect(reference.getByRole('link', {name:'Full mnemonic on WaniKani'})).toHaveAttribute('href', /^https:\/\/www\.wanikani\.com\/kanji\/.*#meaning$/);
-    await expect(page.getByText('Dictionary · curated', {exact:true}).first()).toBeVisible();
+    await expect(reference.getByText('Meaning mnemonic', {exact:true})).toBeVisible();
+    expect((await reference.locator('.mnemonic').textContent())!.length).toBeGreaterThan(100);
+    await expect(reference.getByRole('link', {name:'WaniKani',exact:true})).toHaveAttribute('href', /^https:\/\/www\.wanikani\.com\/kanji\//);
+    await expect(page.getByText('Only an excerpt is stored; the rest is unavailable locally.')).toHaveCount(0);
+    const words=page.locator('.content-block').filter({has:page.locator(':scope > .sentence')});
+    const written=await words.locator(':scope > .sentence').allTextContents();
+    expect(new Set(written).size).toBe(written.length);
+    for(const word of await words.all()) await expect(word.locator(':scope > .reading')).not.toBeEmpty();
+    await expect(words.getByText('Meaning evidence',{exact:true})).toHaveCount(0);
+    await expect(words.getByText('Sources & evidence',{exact:true})).toHaveCount(0);
   }
+});
+
+test('vocabulary count distinguishes textbook entries from kanji context words',async({page})=>{
+  await page.goto('/vocabulary');
+  await expect(page.locator('.catalog-actions')).toContainText('145 entries · 108 textbook vocabulary + 37 kanji context words');
 });

@@ -2,7 +2,7 @@
 
 Authority: [Master Plan](../../FINALIZED_PROJECT_PLAN.md) §§3–10, 17–20 and A1/A2. The user requested Phase 3 on 6 October 2026 after completing Phase 2 documentation and Graphify. This proposal applies that scope; it does not amend the Master Plan.
 
-Status: requirements and existing implementation inspected; application implementation has not begun. Design approval is pending under the brainstorming skill. Phase 3 is not complete.
+Status: design approved by the user on 6 October 2026; implementation and automated/recovery verification finished. Phase 3 acceptance awaits the learner-paced session below. See [implementation handoff](../phase-3-handoff.md) for actual evidence and scoped manual staging. Git mutations remain manual.
 
 ## Design direction
 
@@ -66,29 +66,19 @@ Document exercised commands and actual restore evidence only after they run. Kee
 
 ## Acceptance checklist
 
-- [ ] Dashboard count/action matches the actual queue, including paused, empty, buried/deferred, backlog and unavailable-content states.
-- [ ] Unique introduced/core-pool progress counts a two-card kanji once and excludes reference-only/incidental records.
-- [ ] Original-example study and reveal have bounded approved content and visible provenance, with no answer leakage.
-- [ ] Grammar formation/rationale fallback, both-sided approved comparison access, responsive layout and unchanged scheduling/familiarity pass synthetic checks; real grammar approval remains explicit.
-- [ ] Selected text prefills editable lookup; encoded click/popup fallback, mobile new tab, close/focus restoration and scroll/session preservation work. Attention updates cannot create or rate cards.
+- [x] Dashboard count/action matches the actual queue, including paused, empty, buried/deferred, backlog and unavailable-content states.
+- [x] Unique introduced/core-pool progress counts a two-card kanji once and excludes reference-only/incidental records.
+- [x] Original-example study and reveal have bounded approved content and visible provenance, with no answer leakage.
+- [x] Grammar formation/rationale fallback, both-sided approved comparison access, responsive layout and unchanged scheduling/familiarity pass synthetic checks; real grammar approval remains explicit.
+- [x] Selected text prefills editable lookup; encoded click/popup fallback, mobile new tab, close/focus restoration and scroll/session preservation work. Attention updates cannot create or rate cards.
 - [ ] Realistic 25–35-minute daily flow and 5–10-minute review-only stop/resume are exercised. Automated synthetic timing establishes persistence but does not substitute for actual learner-paced acceptance.
-- [ ] Global/per-type ceilings and cross-day sibling separation pass across sessions, restart and local timezone boundaries; daily timing cannot bypass limits.
-- [ ] Complete real backup restores safely into a separate target; a nonempty synthetic history also round-trips. Export is checked independently.
-- [ ] Stored review works with external network blocked and zero AI calls. Listening/lookup remain optional explicit external navigation.
-- [ ] Required unit, isolated PostgreSQL, reference/review browser, lint, typecheck and build commands actually run. Desktop/mobile, keyboard, Japanese input and error/loading states are inspected.
+- [x] Global/per-type ceilings and cross-day sibling separation pass across sessions, restart and local timezone boundaries; daily timing cannot bypass limits.
+- [x] Complete real backup restores safely into a separate target; a nonempty synthetic history also round-trips. Export is checked independently.
+- [x] Stored review works with external network blocked and zero AI calls. Listening/lookup remain optional explicit external navigation.
+- [x] Required unit, isolated PostgreSQL, reference/review browser, lint, typecheck and build commands actually run. Desktop/mobile, keyboard, Japanese input and error/loading states are inspected.
 
 Use rtk-prefixed Bun script commands, with Node for runtime/database/import work. If the local PowerShell Bun wrapper remains blocked, use the already documented rtk proxy bun.cmd run convention. No Git mutations are authorized.
 
-## Preparation handoff
+## Implementation handoff
 
-Implementation: none yet. Documentation: AGENTS.md and this proposal. Excluded: existing graphify-out/cache/ and graphify-out/manifest.json; all private and machine-local material. No application test/build/browser or restore completion is claimed by this document.
-
-Graphify required: no for this preparation. Reassess after the implemented Phase 3 milestone is integrated and the user confirms clean, up-to-date source; do not regenerate now.
-
-Optional manual staging for this preparation only:
-
-```powershell
-rtk git add -- AGENTS.md docs/plans/2026-10-06-phase-3-design.md
-```
-
-Suggested commit subject: docs: record Phase 3 design and flashcard UX guidance
+Preparation was committed/pushed by the user before implementation. The [Phase 3 handoff](../phase-3-handoff.md) now contains the exact implementation/documentation bundle, exclusions, real verification results, recovery evidence and suggested commit subject. Graphify required: yes after integration and confirmation of clean, up-to-date source; no refresh against uncommitted implementation.

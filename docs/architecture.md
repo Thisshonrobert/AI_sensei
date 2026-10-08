@@ -35,6 +35,8 @@ Phase 2 implements these recall boundaries in `src/lib/server/review/` and `/api
 
 ## Assessment and reading
 
+Phase 3 reuses the review due selector for the dashboard. StudySession active timing is separate from immutable selections and FSRS. Backs fetch bounded approved examples/comparisons only during introduction or after commitment, retaining pinned answers and source revisions. Published comparisons have database link/example checks. Attention updates reuse owned UserItem records; introduction updates preexisting unseen records without clearing flags. Local backup/export shares one PostgreSQL snapshot and restores only into a new distinct target. See [Phase 3 handoff](phase-3-handoff.md).
+
 Scored targets must be approved and introduced before test start or learner-enabled baseline. Freeze selected revisions, seed, policy, order and timer; shortages yield redistribution/shorter tests, never unseen quota fillers. Results and assistance labels do not reschedule cards. See §§11–12, 18.
 
 The dashboard derives counts from the review queue and existing item/source/session records. Progress counts unique introduced items against the verified imported core pool, not mastery or predicted JLPT scaled scores.

@@ -16,7 +16,11 @@
     "import:canonical": "node scripts/canonical-import.mjs",
     "test:canonical": "node scripts/test-canonical-postgres.mjs",
     "test:review": "node scripts/test-review-postgres.mjs",
-    "test:review:browser": "node scripts/test-review-postgres.mjs --browser"
+    "test:review:browser": "node scripts/test-review-postgres.mjs --browser",
+    "backup": "node scripts/backup.mjs",
+    "test:recovery": "node scripts/test-review-postgres.mjs --recovery",
+    "db:target": "node scripts/database-target.mjs",
+    "db:refresh-local": "node scripts/database-target.mjs refresh-local"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",

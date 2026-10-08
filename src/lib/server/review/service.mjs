@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { configuration, initialState, schedule, effectiveRating, studyDay, nextStudyDay } from './scheduler.mjs';
+import { studyContent } from '../content/study.mjs';
 
 export const LOCAL_USER_ID='00000000-0000-4000-8000-000000000001';
 const limits={vocabulary:5,kanji:2,grammar:1,total:8};
@@ -54,12 +55,19 @@ export async function syncCards(db,userId,now=new Date()) {
   let created=0;const gaps=[];
   // Explicit bounded pool. Larger intake is phase 6; never fetch the entire library into memory.
   const items=await tx.item.findMany({where:{status:'approved',sourceEntries:{some:evidenceWhere}},take:500,orderBy:{id:'asc'},include:{vocabulary:true,kanji:true,grammar:true,sourceEntries:{where:evidenceWhere,take:12,select:{id:true,curriculumRole:true}},contentLinks:{where:{content:{status:'approved',successor:null}},take:20,include:{content:{include:{sourceEntries:{where:evidenceWhere,take:4}}}}}}});
+  const existingCards=await tx.card.findMany({where:{userId,status:{not:'retired'},itemId:{in:items.map(item=>item.id)}},select:{itemId:true,objective:true},take:1500});
+  const existing=new Set(existingCards.map(card=>`${card.itemId}:${card.objective}`));
+  const ensureCard=async(item,objective,prompt,answer,extra={})=>{
+   const key=`${item.id}:${objective}`;if(existing.has(key))return 0;
+   const added=await addCard(tx,user,item,objective,prompt,answer,now,extra);
+   if(added)existing.add(key);return added;
+  };
   for(const item of items) {
    const sources=item.sourceEntries.map(e=>e.id);
    if(item.vocabulary&&!item.sourceEntries.every(e=>e.curriculumRole==='context_reference')) {
     const v=item.vocabulary;
     if(!v.reading.trim()||!v.meaningEn.trim()){gaps.push({itemId:item.id,reason:'vocabulary reading or selected meaning missing'});continue;}
-    created+=await addCard(tx,user,item,'vocab_reading_meaning',{text:v.writtenForm,cue:'Recall the reading and selected meaning.',sourceEntryIds:sources},{reading:v.reading,meaning:v.meaningEn,acceptedGlosses:strings(v.acceptedGlossesJson)},now,{siblingKey:wordKey(v.writtenForm,v.reading)});
+    created+=await ensureCard(item,'vocab_reading_meaning',{text:v.writtenForm,cue:'Recall the reading and selected meaning.',sourceEntryIds:sources},{reading:v.reading,meaning:v.meaningEn,acceptedGlosses:strings(v.acceptedGlossesJson)},{siblingKey:wordKey(v.writtenForm,v.reading)});
    }
    if(item.kanji&&item.sourceEntries.some(e=>e.curriculumRole==='core_kanji')) {
     let meanings=strings(item.kanji.meaningsJson);let meaningSources=sources;
@@ -67,10 +75,9 @@ export async function syncCards(db,userId,now=new Date()) {
      const dictionary=item.contentLinks.find(l=>l.content.kind==='explanation'&&l.content.origin==='user'&&l.content.sourceEntries.length&&strings(l.content.payloadJson.selectedMeanings).length&&!l.content.payloadJson.addedBy&&!l.content.payloadJson.acceptedLimitations);
      if(dictionary){meanings=strings(dictionary.content.payloadJson.selectedMeanings);meaningSources=dictionary.content.sourceEntries.map(e=>e.id);}
     }
-    if(meanings.length)created+=await addCard(tx,user,item,'kanji_meaning',{text:item.kanji.glyph,cue:'Recall the selected core meaning.',sourceEntryIds:meaningSources},{meaning:meanings.join('; '),acceptedGlosses:meanings},now);
+    if(meanings.length)created+=await ensureCard(item,'kanji_meaning',{text:item.kanji.glyph,cue:'Recall the selected core meaning.',sourceEntryIds:meaningSources},{meaning:meanings.join('; '),acceptedGlosses:meanings});
     else gaps.push({itemId:item.id,reason:'core meaning evidence missing'});
-    const existing=await tx.card.findFirst({where:{userId,itemId:item.id,objective:'kanji_reading_context',status:{not:'retired'}}});
-    if(!existing) {
+    if(!existing.has(`${item.id}:kanji_reading_context`)) {
      const words=item.contentLinks.filter(l=>l.content.kind==='sentence'&&l.content.origin==='book'&&l.content.payloadJson.sourceWord===true&&l.content.sourceEntries.length&&typeof l.content.payloadJson.japanese==='string'&&typeof l.content.payloadJson.reading==='string'&&l.content.payloadJson.reading.trim()&&l.content.payloadJson.japanese.includes(item.kanji.glyph));
      let context=null;
      for(const link of words) {
@@ -81,13 +88,13 @@ export async function syncCards(db,userId,now=new Date()) {
      if(context) {
       const {link,p,vocabulary}=context;
       await tx.vocabularyKanji.upsert({where:{vocabularyItemId_kanjiItemId:{vocabularyItemId:vocabulary.itemId,kanjiItemId:item.id}},create:{vocabularyItemId:vocabulary.itemId,kanjiItemId:item.id,occurrencesJson:{sourceContentId:link.content.id}},update:{}});
-      created+=await addCard(tx,user,item,'kanji_reading_context',{text:p.japanese,highlight:item.kanji.glyph,cue:'Recall the whole word’s reading.',sourceEntryIds:link.content.sourceEntries.map(e=>e.id)}, {reading:p.reading},now,{contentId:link.content.id,contextVocabularyItemId:vocabulary.itemId,siblingKey:wordKey(p.japanese,p.reading)});
+      created+=await ensureCard(item,'kanji_reading_context',{text:p.japanese,highlight:item.kanji.glyph,cue:'Recall the whole word’s reading.',sourceEntryIds:link.content.sourceEntries.map(e=>e.id)}, {reading:p.reading},{contentId:link.content.id,contextVocabularyItemId:vocabulary.itemId,siblingKey:wordKey(p.japanese,p.reading)});
      } else gaps.push({itemId:item.id,reason:'context requires an approved source word, whole-word reading and matching vocabulary reference'});
     }
    }
    if(item.grammar) {
     const link=item.contentLinks.find(l=>l.role==='target'&&l.content.kind==='question'&&l.content.payloadJson.answerVerified===true&&l.content.payloadJson.targetsVerified===true&&l.content.payloadJson.format==='fill_in_blank'&&typeof l.content.payloadJson.prompt==='string'&&strings(l.content.payloadJson.answer_specification?.acceptable_answers).length&&l.content.sourceEntries.length);
-    if(link){const answers=strings(link.content.payloadJson.answer_specification.acceptable_answers);created+=await addCard(tx,user,item,'grammar_cloze',{text:link.content.payloadJson.prompt,cue:link.content.payloadJson.cue||'Complete the verified cloze.',sourceEntryIds:link.content.sourceEntries.map(e=>e.id)},{response:answers[0],alternatives:answers.slice(1)},now,{contentId:link.content.id});}
+    if(link){const answers=strings(link.content.payloadJson.answer_specification.acceptable_answers);created+=await ensureCard(item,'grammar_cloze',{text:link.content.payloadJson.prompt,cue:link.content.payloadJson.cue||'Complete the verified cloze.',sourceEntryIds:link.content.sourceEntries.map(e=>e.id)},{response:answers[0],alternatives:answers.slice(1)},{contentId:link.content.id});}
     else gaps.push({itemId:item.id,reason:'no approved contextual cloze with structured answers and target'});
    }
   }
@@ -115,26 +122,32 @@ function effectiveLimits(user) {
  const settings=user.settingsJson.newCardLimits||limits;
  return Object.fromEntries(Object.entries(limits).map(([key,max])=>[key,Math.max(0,Math.min(max,Number.isInteger(settings[key])?settings[key]:max))]));
 }
+const elapsed=(session,now)=>Math.min(2147483647,(session.elapsedActiveMs||0)+(session.status==='active'&&session.activeSince?Math.max(0,now-session.activeSince):0));
+async function dueSelection(tx,user,now) {
+ const budget=Math.max(1,Math.min(100,user.settingsJson.reviewCardBudget||40));
+ const dueCount=await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},item:{status:'approved'}}});
+ const due=await tx.card.findMany({where:{userId:user.id,status:'active',dueAt:{lte:now},...eligible(now)},take:budget,orderBy:[{dueAt:'asc'},{id:'asc'}]});
+ const chosen=[];
+ for(const c of due)if(!chosen.some(s=>siblings(s,c)))chosen.push(c);
+ return {budget,dueCount,due,chosen};
+}
 export async function startSession(db,userId,{now=new Date(),includeNew=false}={}) {
  return locked(db,userId,async(tx,user)=>{
   const prior=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
   if(prior) {
    const view=await viewInTransaction(tx,user,prior,now);
-   if(view.card){await tx.studySession.update({where:{id:prior.id},data:{status:'active'}});return {id:prior.id};}
-   await tx.studySession.update({where:{id:prior.id},data:{status:'completed',endedAt:now}});
+   if(view.card){if(prior.status==='paused')await tx.studySession.update({where:{id:prior.id},data:{status:'active',activeSince:now}});return {id:prior.id};}
+   await tx.studySession.update({where:{id:prior.id},data:{status:'completed',endedAt:now,elapsedActiveMs:elapsed(prior,now),activeSince:null}});
   }
-  const budget=Math.max(1,Math.min(100,user.settingsJson.reviewCardBudget||40));
-  const dueCount=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},item:{status:'approved'}}});
-  const due=await tx.card.findMany({where:{userId,status:'active',dueAt:{lte:now},...eligible(now)},take:budget,orderBy:[{dueAt:'asc'},{id:'asc'}]});
-  const chosen=[];
-  for(const c of due)if(!chosen.some(s=>siblings(s,c)))chosen.push(c);
+  const {budget,dueCount,due,chosen}=await dueSelection(tx,user,now);
   const used=await counts(tx,user,now), caps=effectiveLimits(user);
   if(includeNew&&dueCount<=budget&&dueCount===chosen.length) {
    const pool=await tx.card.findMany({where:{userId,status:'new',...eligible(now)},take:100,orderBy:[{createdAt:'asc'},{id:'asc'}]});
    for(const c of pool){const cat=category(c);if(used.total>=caps.total)break;if(used[cat]>=caps[cat]||chosen.some(s=>siblings(s,c)))continue;chosen.push(c);used[cat]++;used.total++;}
   }
   const snapshot={policyVersion:1,studyDay:studyDay(now,user.timezone),includeNew,introductionsPaused:dueCount>budget||dueCount>due.length,entries:chosen.map(c=>({cardId:c.id,stateVersion:c.stateVersion,role:c.status==='new'?'new':'review'}))};
-  const s=await tx.studySession.create({data:{userId,startedAt:now,selectionSeed:randomUUID(),selectionSnapshotJson:snapshot,timeBudgetMinutes:user.settingsJson.timeBudgetMinutes||30}});
+  const overall=user.settingsJson.timeBudgetMinutes||30;
+  const s=await tx.studySession.create({data:{userId,startedAt:now,activeSince:now,selectionSeed:randomUUID(),selectionSnapshotJson:snapshot,timeBudgetMinutes:includeNew?overall:Math.min(overall,user.settingsJson.reviewBudgetMinutes||20)}});
   for(const [i,c] of chosen.entries())await tx.sessionItem.create({data:{sessionId:s.id,itemId:c.itemId,role:c.status==='new'?'new':'review',order:i}});
   return {id:s.id};
  });
@@ -150,12 +163,13 @@ async function viewInTransaction(tx,user,session,now) {
   const c=await tx.card.findFirst({where:{id:e.cardId,userId:user.id,...eligible(now),status:{in:['new','active']}}});
   if(!c||c.stateVersion!==e.stateVersion){deferred++;continue;}
   if(c.status==='new'&&await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},...eligible(now)}})>0){deferred++;continue;}
-  card=c;attempt=await tx.attempt.findFirst({where:{sessionId:session.id,userId:user.id,cardId:c.id,reviewLogId:null}});break;
+  if(!card){card=c;attempt=await tx.attempt.findFirst({where:{sessionId:session.id,userId:user.id,cardId:c.id,reviewLogId:null}});}
  }
  const due=await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},item:{status:'approved'}}});
  const actionableDue=await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},...eligible(now)}});
  const repair=card?await tx.reviewLog.count({where:{userId:user.id,cardId:card.id,rating:1,reviewedAt:{gte:new Date(now.getTime()-30*86400000)}}}):0;
-  return {sessionId:session.id,status:session.status,completed:done.size,total:entries.length,deferred,due,actionableDue,buriedDue:due-actionableDue,introductionsPaused:session.selectionSnapshotJson.introductionsPaused,used:await counts(tx,user,now),limits:effectiveLimits(user),repairSuggested:repair>=5,card:card?{id:card.id,itemId:card.itemId,objective:card.objective,status:card.status,stateVersion:card.stateVersion,prompt:card.promptSpecJson}:null,...(attempt?{attempt:{clientEventId:attempt.clientEventId,answer:attempt.answerJson,readingMatch:attempt.feedbackJson.readingMatch},answer:card.answerSpecJson}:{} )};
+  const duration=elapsed(session,now);
+  return {sessionId:session.id,status:session.status,completed:done.size,total:entries.length,deferred,due,actionableDue,buriedDue:due-actionableDue,introductionsPaused:session.selectionSnapshotJson.introductionsPaused,elapsedActiveMs:duration,timeBudgetMinutes:session.timeBudgetMinutes,timeBudgetReached:duration>=session.timeBudgetMinutes*60000,used:await counts(tx,user,now),limits:effectiveLimits(user),repairSuggested:repair>=5,card:card?{id:card.id,itemId:card.itemId,objective:card.objective,status:card.status,stateVersion:card.stateVersion,prompt:card.promptSpecJson}:null,...(attempt?{attempt:{clientEventId:attempt.clientEventId,answer:attempt.answerJson,readingMatch:attempt.feedbackJson.readingMatch},answer:card.answerSpecJson,study:await studyContent(tx,card)}:{} )};
 }
 export async function sessionView(db,userId,id,now=new Date()) {return locked(db,userId,async(tx,user)=>viewInTransaction(tx,user,await ownedSession(tx,userId,id),now));}
 async function selectedCard(tx,user,sessionId,cardId,stateVersion,now) {
@@ -182,10 +196,11 @@ export async function introduce(db,userId,sessionId,cardId,now=new Date()) {
    const backlog=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},item:{status:'approved'}}});
    if(backlog>Math.min(100,user.settingsJson.reviewCardBudget||40))throw new ReviewError('Introductions paused for backlog');
    await tx.card.update({where:{id:card.id},data:{status:'active',introducedAt:now,introductionDay:studyDay(now,user.timezone),dueAt:now,fsrsStateJson:initialState(now)}});
-   await tx.userItem.upsert({where:{userId_itemId:{userId,itemId:card.itemId}},create:{userId,itemId:card.itemId,familiarity:'introduced',introducedAt:now},update:{}});
+   const learner=await tx.userItem.findUnique({where:{userId_itemId:{userId,itemId:card.itemId}},select:{introducedAt:true,familiarity:true}});
+   await tx.userItem.upsert({where:{userId_itemId:{userId,itemId:card.itemId}},create:{userId,itemId:card.itemId,familiarity:'introduced',introducedAt:now},update:{...(!learner?.introducedAt?{introducedAt:now}:{}),...(learner?.familiarity==='unseen'?{familiarity:'introduced'}:{})}});
    await bury(tx,card,user,now);
   }
-  return {answer:card.answerSpecJson};
+  return {answer:card.answerSpecJson,study:await studyContent(tx,card)};
  });
 }
 export async function commitResponse(db,userId,input,now=new Date()) {
@@ -227,4 +242,41 @@ export async function rate(db,userId,input,now=new Date()) {
   return receipt(log);
  });
 }
-export async function stopSession(db,userId,id,now=new Date()){return locked(db,userId,async tx=>{await ownedSession(tx,userId,id);await tx.studySession.update({where:{id},data:{status:'paused'}});return {savedAt:now.toISOString()};});}
+export async function stopSession(db,userId,id,now=new Date()){return locked(db,userId,async tx=>{const s=await ownedSession(tx,userId,id);if(s.status==='completed')throw new ReviewError('Session is completed');if(s.status==='active')await tx.studySession.update({where:{id},data:{status:'paused',elapsedActiveMs:elapsed(s,now),activeSince:null}});return {savedAt:now.toISOString()};});}
+
+export async function updateBudget(db,userId,minutes) {
+ z.number().int().min(5).max(60).parse(minutes);
+ return locked(db,userId,async(tx,user)=>{
+  await tx.user.update({where:{id:userId},data:{settingsJson:{...user.settingsJson,timeBudgetMinutes:minutes}}});
+  const open=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}}});
+  if(open)await tx.studySession.update({where:{id:open.id},data:{timeBudgetMinutes:open.selectionSnapshotJson.includeNew?minutes:Math.min(minutes,user.settingsJson.reviewBudgetMinutes||20)}});
+  return {timeBudgetMinutes:minutes};
+ });
+}
+export async function markUnfamiliar(db,userId,itemId) {
+ uuid.parse(itemId);
+ return locked(db,userId,async tx=>{
+  if(!await tx.item.findFirst({where:{id:itemId,status:'approved'},select:{id:true}}))throw new ReviewError('Approved item unavailable',404);
+  await tx.userItem.upsert({where:{userId_itemId:{userId,itemId}},create:{userId,itemId,needsAttention:true},update:{needsAttention:true}});
+  return {needsAttention:true};
+ });
+}
+export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
+ const progress={};
+ for(const kind of ['vocabulary','kanji','grammar']){
+  const membership=kind==='kanji'?{curriculumRole:'core_kanji'}:{OR:[{curriculumRole:null},{curriculumRole:{not:'context_reference'}}],source:{sourceType:'book'}};
+  const where={kind,status:'approved',sourceEntries:{some:{verificationStatus:'verified',successor:null,...membership}}};
+  progress[kind]={total:await db.item.count({where}),introduced:await db.item.count({where:{...where,userItems:{some:{userId,introducedAt:{not:null}}}}})};
+ }
+ const user=await db.user.findUnique({where:{id:userId}});
+ if(!user)return {progress,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0,total:0},limits,timeBudgetMinutes:30,introductionsPaused:false,sessionId:null};
+ return locked(db,userId,async(tx,u)=>{
+  const {budget,dueCount,due,chosen}=await dueSelection(tx,u,now);
+  const active=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
+  const view=active?await viewInTransaction(tx,u,active,now):null;
+  const actionableDue=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},...eligible(now)}});
+  const missingGrammar=await tx.item.count({where:{kind:'grammar',status:'approved',cards:{none:{userId,objective:'grammar_cloze',status:{not:'retired'}}}}});
+  const missingContext=await tx.item.count({where:{kind:'kanji',status:'approved',sourceEntries:{some:{verificationStatus:'verified',curriculumRole:'core_kanji'}},cards:{none:{userId,objective:'kanji_reading_context',status:{not:'retired'}}}}});
+  return {progress,reviewCount:view?.card?view.total-view.completed-view.deferred:chosen.length,sessionId:view?.card?active.id:null,sessionStatus:active?.status,due:dueCount,actionableDue,buriedDue:dueCount-actionableDue,deferred:view?.deferred||0,contentGaps:missingGrammar+missingContext,introductionsPaused:dueCount>budget||dueCount>due.length,used:await counts(tx,u,now),limits:effectiveLimits(u),timeBudgetMinutes:u.settingsJson.timeBudgetMinutes||30};
+ });
+}

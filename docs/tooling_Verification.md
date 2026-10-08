@@ -1,10 +1,10 @@
 # Tooling and verification
 
-Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL, preserved staging/canonical import, source-aware reference pages and Phase 2 daily recall.** The three existing batches were accepted without PDF comparison and promoted with exact approvals. Cards, pinned scheduling, review transactions and stop/resume now exist. The independent PDF intake/transcription gate remains unverified; see [Phase 2 handoff](phase-2-handoff.md).
+Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL, preserved import/reference pages, daily recall and Phase 3 personal-release implementation.** The three existing batches were accepted without PDF comparison and promoted with exact approvals. The independent PDF intake/transcription gate and learner-paced release acceptance remain unverified; see [Phase 3 handoff](phase-3-handoff.md).
 
 ## Establish tooling in phase 1
 
-Persistent cards, ts-fsrs 5.4.2, same-origin review transactions, daily caps and `/review` stop/resume are implemented. Original PDF verification and Phase 3 backup/restore remain pending. See [Phase 2 handoff](phase-2-handoff.md) for the complete fresh verification evidence.
+Persistent cards, ts-fsrs 5.4.2, same-origin review transactions, daily caps and `/review` stop/resume are implemented. Phase 3 adds the daily dashboard, approved study backs/comparisons, explicit dictionary/attention, active timing and verified local recovery. Original PDF verification and the learner-paced Phase 3 acceptance session remain pending. See [Phase 3 handoff](phase-3-handoff.md) for current evidence and [recovery](backup-recovery.md) for exercised commands.
 
 New checks use Bun scripts with Node execution: `rtk proxy bun.cmd run test:review` creates an isolated PostgreSQL database and runs transaction/selection checks; `rtk proxy bun.cmd run test:review:browser` creates its own synthetic fixture and tests production Edge recall. Build first. The `.cmd` wrapper bypasses this session's blocked PowerShell Bun wrapper. Never run synthetic learner review tests against the real library. `test:browser` keeps the existing reference checks and skips the isolated review test unless its dedicated runner enables it.
 

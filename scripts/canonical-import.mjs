@@ -4,11 +4,13 @@ import { pathToFileURL } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 import { previewPromotion, previewBatch, confirmEdition, recordApproval, promote } from '../src/lib/server/content/canonical-import.mjs';
 
-export async function localDatabaseUrl(){
- if(process.env.DATABASE_URL)return process.env.DATABASE_URL;
+export async function localDatabaseUrl(name='DATABASE_URL'){
+ if(!['DATABASE_URL','LOCAL_DATABASE_URL','POSTGRES_DATABASE_URL'].includes(name))throw new Error('Unsupported connection setting');
+ if(process.env[name])return process.env[name];
  const env=await readFile('.env','utf8');
- const match=/^\s*DATABASE_URL\s*=\s*(.*?)\s*$/m.exec(env);
- if(!match)throw new Error('Local DATABASE_URL missing');
+ const match=new RegExp(`^\\s*${name}\\s*=\\s*(.*?)\\s*$`,'m').exec(env);
+ if(!match&&name==='LOCAL_DATABASE_URL')return localDatabaseUrl();
+ if(!match)throw new Error('Database connection setting missing');
  return match[1].replace(/^['"]|['"]$/g,'');
 }
 export async function run(args=process.argv.slice(2)){

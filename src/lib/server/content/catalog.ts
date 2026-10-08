@@ -4,7 +4,11 @@ import { db } from '../db';
 import { type Kind, pageInput } from './catalog-input';
 
 export const sourceSelect = { id: true, title: true, edition: true, sourceType: true, language: true } satisfies Prisma.SourceSelect;
-export const citationSelect = { id: true, revision: true, successor: { select: { id: true } }, printedPage: true, pdfPageIndex: true, fieldPresenceJson: true, sourceRecordKey: true, source: { select: sourceSelect } } satisfies Prisma.SourceEntrySelect;
+// Only the linked record is included, never a book, batch or raw source payload.
+export const citationSelect = { id: true, revision: true, successor: { select: { id: true } }, printedPage: true, pdfPageIndex: true, fieldPresenceJson: true, sourceRecordKey: true, source: { select: sourceSelect },
+  item: { select: { vocabulary: {select:{writtenForm:true,reading:true,meaningEn:true}}, kanji:{select:{glyph:true,meaningsJson:true,onReadingsJson:true,kunReadingsJson:true}}, grammar:{select:{pattern:true,explanationJa:true,explanationEn:true}} } },
+  content: { select: { kind:true,status:true,origin:true,payloadJson:true } },
+} satisfies Prisma.SourceEntrySelect;
 export const itemSelect = { id: true, kind: true, status: true, revision: true, fieldOriginsJson: true, vocabulary: true, kanji: true, grammar: true } satisfies Prisma.ItemSelect;
 export const contentSelect = { id: true, revision: true, successor: { select: { id: true } }, kind: true, origin: true, status: true, payloadJson: true, sourceEntries: { select: citationSelect, take: 20, where: { successor: null } } } satisfies Prisma.ContentSelect;
 export type CatalogItem = Prisma.ItemGetPayload<{ select: typeof itemSelect }>;
@@ -20,21 +24,36 @@ export async function listItems(kind: Kind, input: {page?: string; query?: strin
     db.item.findMany({ where, select: itemSelect, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 50, skip: paging.skip }),
     db.item.count({ where }),
   ]);
-  return { items, count, ...paging };
+  const contextCount=kind==='vocabulary'?await db.item.count({where:{...where,sourceEntries:{some:{curriculumRole:'context_reference',successor:null}}}}):0;
+  return { items, count, contextCount, ...paging };
 }
 export async function itemDetail(kind: Kind, id: string) {
   if (!isUuid(id)) return null;
   const item = await db.item.findFirst({ where: { id, kind, status: 'approved' }, select: {
-    ...itemSelect, sourceEntries: { select: citationSelect, where: { successor: null }, take: 30 },
+    createdAt: true,
+    ...itemSelect, vocabulary: {include:{kanjiLinks:{where:{kanji:{item:{status:'approved'}}},take:24,select:{kanji:{select:{itemId:true,glyph:true,meaningsJson:true}}}}}}, sourceEntries: { select: citationSelect, where: { successor: null }, take: 30 },
     contentLinks: { where: { content: { successor: null } }, select: { content: { select: contentSelect } }, take: 120, orderBy: { contentId: 'asc' } },
   } });
   if (!item) return null;
   const originIds = Object.values(item.fieldOriginsJson as Prisma.JsonObject).filter((value): value is string => typeof value === 'string' && isUuid(value));
   const exactEvidence = await db.sourceEntry.findMany({ where: { itemId: id, id: { in: originIds } }, select: citationSelect, take: 20 });
   const sourceEntries = [...new Map([...item.sourceEntries, ...exactEvidence].map(entry => [entry.id, entry])).values()];
-  return { ...item, sourceEntries };
+  const kanjiInWord = item.vocabulary ? await db.kanji.findMany({where:{glyph:{in:[...new Set(Array.from(item.vocabulary.writtenForm))].slice(0,24)},item:{status:'approved'}},select:{itemId:true,glyph:true,meaningsJson:true},take:24}) : [];
+  // Exact stored glyph matches are display aids; this does not create canonical relationships.
+  const linkedKanji = [...new Map([...(item.vocabulary?.kanjiLinks.map(l=>l.kanji)||[]),...kanjiInWord].map(k=>[k.itemId,k])).values()];
+  return { ...item, sourceEntries, linkedKanji };
 }
 export function isUuid(id: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id); }
+export async function itemNeighbors(kind:Kind,id:string,createdAt:Date) {
+  // Same deterministic order as the catalog, without loading the entire collection.
+  const adjacent=async(direction:'previous'|'next')=>{
+    const comparison=direction==='previous'?'lt':'gt';
+    const order=direction==='previous'?'desc':'asc';
+    return db.item.findFirst({where:{kind,status:'approved',OR:[{createdAt:{[comparison]:createdAt}},{createdAt,id:{[comparison]:id}}]},select:{id:true},orderBy:[{createdAt:order},{id:order}]});
+  };
+  const [previous,next]=await Promise.all([adjacent('previous'),adjacent('next')]);
+  return {previous,next};
+}
 export async function sourceList(input: {page?: string}) {
   const paging = pageInput(input);
   const [sources, count] = await Promise.all([db.source.findMany({ select: { ...sourceSelect, _count: { select: { entries: true } } }, orderBy: { id: 'asc' }, take: 50, skip: paging.skip }), db.source.count()]);
