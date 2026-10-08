@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { comparisonSchema } from './study.mjs';
 
 const uuid=z.string().uuid();
 const text=z.string().min(1).max(100000);
@@ -129,6 +130,7 @@ async function reviewRecord(tx,batch,r,selection,seen=new Set()) {
  }
  if(new Set((r.additions||[]).map(a=>a.key)).size!==(r.additions||[]).length)throw new Error('Duplicate supplementary key');
  for(const a of r.additions||[]){
+  if(!a.unresolved&&a.payload.explanationType==='grammar_comparison'&&!comparisonSchema.safeParse(a.payload).success)throw new Error('Invalid grammar comparison payload');
   if(new Set(a.citations.map(c=>`${c.sourceId}:${c.sourceRecordKey}`)).size!==a.citations.length)throw new Error('Duplicate supplementary citation');
   if(a.origin==='user'&&!a.citations.length)throw new Error('Dictionary addition requires independent citation');
   if(a.payload.sourcePayloadHash&&a.payload.sourcePayloadHash!==hashJson(raw))throw new Error('Supplementary source payload mismatch');
@@ -145,6 +147,22 @@ async function reviewRecord(tx,batch,r,selection,seen=new Set()) {
   }
  }
  const dependencies=[];
+ for(const addition of r.additions||[]){
+  if(addition.unresolved||addition.payload.explanationType!=='grammar_comparison')continue;
+  const comparison=comparisonSchema.parse(addition.payload),patterns=[],examples=[];
+  if(selection.records.some(record=>record.family==='entry'&&record.match?.mode==='correct'&&comparison.grammarItemIds.includes(record.match.itemId)))throw new Error('Approve pattern corrections separately before reviewing a comparison');
+  for(const id of comparison.grammarItemIds){
+   const pattern=await loadItem(tx,id);
+   if(pattern.item.kind!=='grammar')throw new Error('Comparison requires approved grammar patterns');
+   patterns.push(pattern);
+  }
+  for(const ref of comparison.examples){
+   const sentence=await tx.content.findFirst({where:{id:ref.contentId,kind:'sentence',status:'approved',successor:null},include:{items:{orderBy:{itemId:'asc'}}}});
+   if(!sentence||!sentence.items.some(link=>link.itemId===ref.grammarItemId)||typeof sentence.payloadJson.japanese!=='string'||!sentence.payloadJson.japanese.trim())throw new Error('Comparison requires current approved linked examples');
+   examples.push(JSON.parse(JSON.stringify(sentence)));
+  }
+  dependencies.push({comparisonKey:addition.key,patterns,examples});
+ }
  for(const target of r.targets) {
   if(!!target.itemId===!!target.recordKey)throw new Error('Target requires exactly one itemId or selected recordKey');
   if(target.itemId) {
@@ -201,7 +219,7 @@ export async function previewPromotion(db,input){
    r.candidates=r.review.typed?await tx.item.findMany({where:r.review.source&&p.batch.stagedJson.content_type==='kanji'?{kind:'kanji',canonicalKey:r.review.typed.glyph}:p.batch.stagedJson.content_type==='vocabulary'?{kind:'vocabulary',vocabulary:{writtenForm:r.review.typed.writtenForm}}:{kind:'grammar',grammar:{pattern:r.review.typed?.pattern}},select:{id:true,canonicalKey:true,revision:true},take:20}):[];
   }
   return {batchId:p.batch.id,records:p.records};
- },{isolationLevel:'RepeatableRead',timeout:30000});
+ },{isolationLevel:'RepeatableRead',timeout:30000,maxWait:30000});
 }
 
 export async function previewBatch(db,batchId){
@@ -211,14 +229,24 @@ export async function previewBatch(db,batchId){
   const staged=batch.stagedJson;
   const records=[];
   const all=[...(staged.entries||[]).map(raw=>({family:'entry',raw})),...(staged.exercise_passages||[]).map(raw=>({family:'passage',raw})),...(staged.lesson_questions||[]).map(raw=>({family:'question',raw}))];
+  // One bounded read per spelling group avoids a network round trip per entry.
+  const identities=[...new Set((staged.entries||[]).map(raw=>staged.content_type==='kanji'?normalizeKanji(raw.character):staged.content_type==='vocabulary'?raw.word:raw.pattern))];
+  const candidateMap=new Map();
+  for(let offset=0;offset<identities.length;offset+=50){
+   const group=identities.slice(offset,offset+50),kind=staged.content_type;
+   const where=kind==='kanji'?{kind,kanji:{glyph:{in:group}}}:kind==='vocabulary'?{kind,vocabulary:{writtenForm:{in:group}}}:{kind,grammar:{pattern:{in:group}}};
+   const rows=await tx.item.findMany({where,take:1001,select:{id:true,kind:true,canonicalKey:true,revision:true,...(kind==='kanji'?{kanji:{select:{glyph:true}}}:kind==='vocabulary'?{vocabulary:{select:{writtenForm:true}}}:{grammar:{select:{pattern:true}}})}});
+   if(rows.length>1000)throw new Error('Inventory candidate group exceeds its bounded limit');
+   for(const row of rows){const identity=row.kanji?.glyph??row.vocabulary?.writtenForm??row.grammar?.pattern;const {id,kind,canonicalKey,revision}=row;const candidates=candidateMap.get(identity)||[];if(candidates.length<20)candidates.push({id,kind,canonicalKey,revision});candidateMap.set(identity,candidates);}
+  }
   for(const {family,raw} of all){
    const kind=staged.content_type;
-   const where=family!=='entry'?null:kind==='kanji'?{kind,kanji:{glyph:normalizeKanji(raw.character)}}:kind==='vocabulary'?{kind,vocabulary:{writtenForm:raw.word}}:{kind,grammar:{pattern:raw.pattern}};
-   const candidates=where?await tx.item.findMany({where,take:20,select:{id:true,kind:true,canonicalKey:true,revision:true}}):[];
+   const identity=family!=='entry'?null:kind==='kanji'?normalizeKanji(raw.character):kind==='vocabulary'?raw.word:raw.pattern;
+   const candidates=family==='entry'?(candidateMap.get(identity)||[]):[];
    records.push({recordKey:raw.source_record_key,family,payloadHash:hashJson(raw),raw,sourcePdfPages:raw.source_pdf_pages,sourcePrintedPages:raw.source_printed_pages,candidates,issues:(batch.validationErrorsJson||[]).filter(i=>i.record_key===raw.source_record_key),promotionReady:false,requiredDecisions:['Human compare complete record and nested examples/words','Confirm edition and exact PDF/printed page mapping','Choose canonical identity or exact match',...(family==='question'?['Verify answer independently','Approve actual target grammar']:[])]});
   }
   return {batchId:batch.id,sourceId:batch.sourceId,fileHash:batch.fileHash,source:batch.source,status:batch.status,editionConfirmationHash:hashJson(batch.source),pageConvention:'source_pdf_pages are supplied one-based pages (unverified locator frame); SourceEntry.pdfPageIndex is zero-based within the confirmed PDF. Preserve supplied locator pages and confirm whether full book or selected excerpt before converting. Printed pages are independent strings; never use a constant offset.',records,ready:0,blocked:records.length};
- },{isolationLevel:'RepeatableRead',timeout:30000});
+ },{isolationLevel:'RepeatableRead',timeout:30000,maxWait:30000});
 }
 
 export async function confirmEdition(db,sourceId,edition,confirmation,reviewer){
@@ -228,7 +256,7 @@ export async function confirmEdition(db,sourceId,edition,confirmation,reviewer){
   if(!source||source.edition||await tx.sourceEntry.count({where:{sourceId}}))throw new Error('Edition can only be confirmed once on an unpromoted source; distinct editions require separate Source identity');
   if(confirmation!==`edition:${sourceId}:${hashJson(source)}:${edition}`)throw new Error('Explicit edition/hash confirmation required');
   return tx.source.update({where:{id:sourceId},data:{edition,notes:`${source.notes||''}\nEdition confirmed by ${reviewer} on ${new Date().toISOString()}.`},select:{id:true,edition:true}});
- },{isolationLevel:'Serializable'});
+ },{isolationLevel:'Serializable',timeout:30000,maxWait:30000});
 }
 export async function recordApproval(db,input,key,confirmation,reviewer){
  if(!reviewer?.trim())throw new Error('Named human reviewer required');
@@ -236,7 +264,7 @@ export async function recordApproval(db,input,key,confirmation,reviewer){
   const p=await prepare(tx,input); const r=p.records.find(x=>x.recordKey===key);
   if(!r||confirmation!==r.confirmationToken)throw new Error('Explicit record/hash confirmation required; JSON status is not approval');
   return tx.promotionApproval.upsert({where:{importBatchId_recordKey_reviewHash:{importBatchId:p.batch.id,recordKey:key,reviewHash:r.reviewHash}},create:{importBatchId:p.batch.id,recordKey:key,reviewHash:r.reviewHash,reviewJson:r.review,reviewer},update:{},select:{id:true,reviewHash:true}});
- },{isolationLevel:'Serializable',timeout:30000});
+ },{isolationLevel:'Serializable',timeout:30000,maxWait:30000});
 }
 async function evidence(tx,batch,key,target,raw,r,role=null,reviewHash=null){
  const prior=await tx.sourceEntry.findFirst({where:{sourceId:batch.sourceId,sourceRecordKey:key},orderBy:{revision:'desc'}});
@@ -325,9 +353,16 @@ export async function promote(db,input){
     const key=`${r.recordKey}/addition/${a.key}`;
     if(await tx.sourceEntry.findFirst({where:{importBatchId:p.batch.id,sourceRecordKey:key}}))continue;
     const previous=await tx.sourceEntry.findFirst({where:{sourceId:p.batch.sourceId,sourceRecordKey:key},orderBy:{revision:'desc'},include:{content:true}});
-    const content=await tx.content.create({data:{kind:'explanation',origin:a.origin,status:a.unresolved?'draft':'approved',revision:(previous?.content?.revision||0)+1,supersedesId:previous?.contentId||null,parentContentId:receipt.contentId,payloadJson:{...a.payload,additionKey:a.key,reviewBasis:r.reviewBasis||'source_compared',sourceRecordKey:r.recordKey}}});
+    const comparisonDependency=reviewed.review.dependencies.find(d=>d.comparisonKey===a.key);
+    const comparisonRevision=comparisonDependency?{grammarItemRevisions:Object.fromEntries(comparisonDependency.patterns.map(p=>[p.item.id,p.item.revision]))}:{};
+    const content=await tx.content.create({data:{kind:'explanation',origin:a.origin,status:a.unresolved?'draft':'approved',revision:(previous?.content?.revision||0)+1,supersedesId:previous?.contentId||null,parentContentId:receipt.contentId,payloadJson:{...a.payload,...comparisonRevision,additionKey:a.key,reviewBasis:r.reviewBasis||'source_compared',sourceRecordKey:r.recordKey}}});
     await evidence(tx,p.batch,key,{contentId:content.id},a,r,null,reviewed.reviewHash);
-    const itemIds=receipt.itemId?[receipt.itemId]:r.targets.map(t=>t.itemId||resolved.get(t.recordKey));
+    let itemIds=receipt.itemId?[receipt.itemId]:r.targets.map(t=>t.itemId||resolved.get(t.recordKey));
+    if(!a.unresolved&&a.payload.explanationType==='grammar_comparison'){
+     const comparison=comparisonSchema.parse(a.payload);
+     if(!itemIds.some(id=>comparison.grammarItemIds.includes(id)))throw new Error('Comparison must include the reviewed grammar target');
+     itemIds=comparison.grammarItemIds;
+    }
     for(const itemId of new Set(itemIds))await tx.contentItem.create({data:{contentId:content.id,itemId,role:'support'}});
     for(const c of a.citations){
      const source=reviewed.review.citations.find(x=>hashJson(x.citation)===hashJson(c)).source;
@@ -344,5 +379,5 @@ export async function promote(db,input){
   const status=approvedCount===keys.length?'promoted':'partial';
   if(p.batch.status!==status||(status==='promoted'&&!p.batch.committedAt))await tx.importBatch.update({where:{id:p.batch.id},data:{status,committedAt:status==='promoted'?(p.batch.committedAt||new Date()):null}});
   return {batchId:p.batch.id,promoted,totalPersisted:count,approvedRecords:approvedCount,totalRecords:keys.length};
- },{isolationLevel:'Serializable',timeout:60000});
+ },{isolationLevel:'Serializable',timeout:60000,maxWait:30000});
 }

@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { localDatabaseUrl } from './canonical-import.mjs';
 
 // Create a fresh database, never reset/truncate or run synthetic writes in staging.
-const base=new URL(await localDatabaseUrl());
+const base=new URL(await localDatabaseUrl('LOCAL_DATABASE_URL'));
 if(!['127.0.0.1','localhost'].includes(base.hostname))throw new Error('Tests require localhost PostgreSQL');
 const name=`ai_sensei_canonical_test_${randomUUID().replaceAll('-','')}`;
 if(!/^ai_sensei_canonical_test_[a-f0-9]{32}$/.test(name))throw new Error('Invalid isolated test name');

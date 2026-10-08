@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/server/db';
-import { LOCAL_USER_ID, ReviewError, createUser, syncCards, startSession, sessionView, introduce, commitResponse, rate, stopSession } from '@/lib/server/review/service.mjs';
+import { LOCAL_USER_ID, ReviewError, createUser, syncCards, startSession, sessionView, introduce, commitResponse, rate, stopSession, updateBudget, markUnfamiliar } from '@/lib/server/review/service.mjs';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -14,6 +14,8 @@ const input=z.discriminatedUnion('action',[
  z.object({action:z.literal('respond'),...response}).strict(),
  z.object({action:z.literal('rate'),...response,rating:z.number().int().min(1).max(4),components:z.record(z.boolean())}).strict(),
  z.object({action:z.literal('stop'),sessionId:id}).strict(),
+ z.object({action:z.literal('budget'),minutes:z.number().int().min(5).max(60)}).strict(),
+ z.object({action:z.literal('attention'),itemId:id}).strict(),
 ]);
 function send(value:unknown,status=200){return NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});}
 function local(request:NextRequest){return ['127.0.0.1','localhost'].includes(request.nextUrl.hostname)&&/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(request.headers.get('host')||'');}
@@ -46,6 +48,8 @@ export async function POST(request:NextRequest){
    return send({...await sessionView(db,LOCAL_USER_ID,session.id),contentGaps:pool.gaps.length});
   }
   if(data.action==='introduce')return send(await introduce(db,LOCAL_USER_ID,data.sessionId,data.cardId));
+  if(data.action==='budget'){await createUser(db);return send(await updateBudget(db,LOCAL_USER_ID,data.minutes));}
+  if(data.action==='attention'){await createUser(db);return send(await markUnfamiliar(db,LOCAL_USER_ID,data.itemId));}
   if(data.action==='stop')return send(await stopSession(db,LOCAL_USER_ID,data.sessionId));
   const {action,...payload}=data;
   if(action==='respond')return send(await commitResponse(db,LOCAL_USER_ID,payload));

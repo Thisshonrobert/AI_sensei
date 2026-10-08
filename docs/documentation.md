@@ -22,6 +22,8 @@ The Zapier guide contributes organization and style only. Its architecture, mode
 | [Architecture](architecture.md) | Responsibilities and invariants with plan references |
 | [Tooling & verification](tooling_Verification.md) | Honest tooling status and meaningful evidence requirements |
 | [Database import](database-import.md) | Local PostgreSQL lifecycle, preserved staging, canonical review/approval/promotion boundary |
+| [Backup recovery](backup-recovery.md) | Exercised private backup/export and separate-target restore commands |
+| [Phase 3 handoff](phase-3-handoff.md) | Personal-release behavior, actual verification and remaining acceptance |
 | [Implementation workflow](implementation-workflow.md) | Ordered phase scope, status, and handoff format |
 | [Graphify](graphify.md) | Optional engineering index, milestone/privacy policy |
 | [Extraction prompt](extraction-templates/extraction-prompt.md) | Existing illustrative interchange templates and manual source extraction |

@@ -280,6 +280,8 @@ model StudySession {
   endedAt DateTime? @db.Timestamptz(6)
   status String @default("active")
   timeBudgetMinutes Int @default(30)
+  elapsedActiveMs Int @default(0)
+  activeSince DateTime? @db.Timestamptz(6)
   selectionSeed String
   selectionSnapshotJson Json
   assessmentResultJson Json?

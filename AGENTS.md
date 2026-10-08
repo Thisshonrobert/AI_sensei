@@ -34,10 +34,10 @@ The approved stack is Next.js, React, TypeScript, Tailwind, PostgreSQL, Prisma, 
 See [docs/repository-structure.md](docs/repository-structure.md) for current folders and deferred module boundaries.
 
 - `FINALIZED_PROJECT_PLAN.md` — authoritative specification; retain its location and amendments.
-- `src/app/` — read-only Next.js reference/item/source pages; feature mutations arrive in their phases.
+- `src/app/` — Next.js reference/item/source pages, daily dashboard and persistent review UI; local mutations use the review route.
 - `src/components/` — shared UI only when actual screens need it.
 - `src/lib/server/` — server modules; begin with `content/` for verified import. Review, assessment, and generation arrive in their respective phases.
-- `prisma/` — Source/ImportBatch staging and bounded canonical content/provenance migrations; learner and later-feature tables remain deferred.
+- `prisma/` — staging, canonical provenance, persistent learner recall and session timing migrations; assessment/generation remain deferred.
 - `scripts/` — bounded local import/backup utilities as their phases require them.
 - `tests/` — focused unit, PostgreSQL integration, and study/resume browser checks as behavior exists.
 - `docs/` — engineering guidance, existing illustrative extraction templates, and private-use UI references.
@@ -65,7 +65,7 @@ The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/arc
 
 ## Tooling & Verification
 
-Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod staging, canonical import and a read-only Next.js reference application are present. Three real batches were explicitly accepted without PDF comparison and promoted with exact record/hash approvals; source transcription is not independently verified. Draft questions/additions remain unresolved. There is no review scheduler or study-session UI. Do not claim build/lint/typecheck/browser checks passed until their real commands run. Future sanitized batches remain unapproved until their own human decisions; this acceptance is limited to the existing three batches.
+Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod import, reference pages, persistent FSRS recall and Phase 3 personal-release UI/recovery are implemented. See [docs/phase-3-handoff.md](docs/phase-3-handoff.md) for evidence and the pending learner-paced acceptance gate. Three real batches were explicitly accepted without PDF comparison and promoted with exact record/hash approvals; source transcription is not independently verified. Draft questions/additions remain unresolved. Do not claim checks passed until their real commands run. Future batches require their own human decisions; acceptance is limited to the existing three batches.
 
 Use Bun as the primary package manager/script runner (`packageManager` and `bun.lock`); retain Node for database/import/server execution. Use `rtk bun run test` for the existing Node suite, not bare `bun test`.
 

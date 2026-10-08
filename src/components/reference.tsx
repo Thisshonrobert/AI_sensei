@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { Prisma } from '@prisma/client';
 import type { CatalogContent, CatalogItem, Citation } from '@/lib/server/content/catalog';
+import { KanjiMnemonic } from './kanji-mnemonic';
 
 export function object(value: Prisma.JsonValue): Prisma.JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -19,50 +20,54 @@ export function Origin({origin, dictionary = false}: {origin: string; dictionary
 }
 export function Citations({citations}: {citations: Citation[]}) {
   return <ul className="citations">{citations.map(c => <li key={c.id}>
-    <Origin origin={c.source.sourceType === 'book' ? 'book' : 'user'} dictionary={c.source.sourceType === 'dictionary'} />{' '}
-    <Link data-source-link href={`/sources/${c.source.id}?record=${c.id}#record-${c.id}`}>{c.source.title}</Link>
-    <span className="locator">{c.printedPage ? ` · printed p. ${c.printedPage}` : ' · printed page not confirmed'}{c.pdfPageIndex !== null ? ` · excerpt PDF p. ${c.pdfPageIndex + 1}` : ' · PDF page not confirmed'}</span>
+    <details className="inline-evidence"><summary>{c.source.title}{c.printedPage && ` · p. ${c.printedPage}`}</summary>
+    <Origin origin={c.source.sourceType === 'book' ? 'book' : 'user'} dictionary={c.source.sourceType === 'dictionary'} />
+    <p className="locator">{c.printedPage ? `Printed p. ${c.printedPage}` : 'Printed page not confirmed'}{c.pdfPageIndex !== null ? ` · excerpt PDF p. ${c.pdfPageIndex + 1}` : ' · PDF page not confirmed'}</p>
     {object(c.fieldPresenceJson).reviewBasis === 'user_accepted_without_pdf_comparison' && <p className="acceptance">Accepted without PDF comparison</p>}
     {c.successor && <p className="muted">Historical source evidence · revision {c.revision}</p>}
+    <EvidenceRecord citation={c}/>
+    <Link data-source-link href={`/sources/${c.source.id}?record=${c.id}#record-${c.id}`}>Open source page</Link>
+    </details>
   </li>)}</ul>;
 }
-export function ContentBlock({content}: {content: CatalogContent}) {
+function EvidenceRecord({citation:c}:{citation:Citation}) {
+  const item=c.item, p=object(c.content?.payloadJson ?? null);
+  return <div className="evidence-record" data-evidence-record>
+    {item && <><p className="field-label">Linked entry{c.successor ? ' · current reference' : ''}</p><p lang="ja" className="japanese sentence">{item.vocabulary?.writtenForm || item.kanji?.glyph || item.grammar?.pattern}</p>
+      {item.vocabulary && <><p lang="ja">{item.vocabulary.reading}</p><p>{item.vocabulary.meaningEn}</p></>}
+      {item.kanji && <><p>{text(item.kanji.meaningsJson)}</p><p lang="ja">{text(item.kanji.onReadingsJson)} · {text(item.kanji.kunReadingsJson)}</p></>}
+      {item.grammar && <><p lang="ja">{item.grammar.explanationJa}</p><p>{item.grammar.explanationEn}</p></>}
+    </>}
+    {c.content && <><p className="field-label">Stored {c.content.kind} · {c.content.status}</p>
+      {(p.japanese || p.originalJapanese || p.prompt) && <p className="japanese" lang="ja">{text(p.japanese || p.originalJapanese || p.prompt)}</p>}
+      {p.reading && <p lang="ja">{text(p.reading)}</p>}{p.translation && <p>{text(p.translation)}</p>}{(p.meanings || p.selectedMeanings) && <p>{text(p.meanings || p.selectedMeanings)}</p>}
+      {p.kind === 'dictionaryKanjiReference' && <KanjiMnemonic payload={p}/>}
+    </>}
+  </div>;
+}
+export function ContentBlock({content,targetMeanings,meaningSupplement,displayReading,showEvidence=true}: {content: CatalogContent;targetMeanings?:Prisma.JsonValue;meaningSupplement?:CatalogContent|null;displayReading?:string;showEvidence?:boolean}) {
   const p = object(content.payloadJson);
   const dictionary = content.origin === 'user' && content.sourceEntries.some(c => c.source.sourceType === 'dictionary');
   const uncertainty = text(p.uncertainty);
   const questionReview = object(p.questionReview ?? null);
   const deferred = content.kind === 'question' && questionReview.grammarConnections === 'intentionally_deferred';
-  return <article className={`content-block ${content.status === 'draft' ? 'draft' : ''}`}>
-    <div className="flex flex-wrap gap-2 items-center"><Origin origin={content.origin} dictionary={dictionary} />{p.addedBy === 'AI' && <span className="badge generated" data-ai-addition>Added by AI</span>}<span className="status">{content.successor ? `Historical revision ${content.revision} · superseded` : deferred ? 'Reference only · connections deferred' : content.status === 'draft' ? 'Unresolved draft · reference only' : 'Approved reference'}</span></div>
+  return <article data-content-id={content.id} className={`content-block ${content.status === 'draft' ? 'draft' : ''}`}>
+    <div className="flex flex-wrap gap-2 items-center">{content.origin === 'generated' && <Origin origin={content.origin}/>} {p.addedBy === 'AI' && <span className="badge generated" data-ai-addition>Added by AI</span>}{(content.successor || deferred || content.status === 'draft') && <span className="status">{content.successor ? `Historical revision ${content.revision} · superseded` : deferred ? 'Reference only · connections deferred' : 'Unresolved draft · reference only'}</span>}</div>
     {deferred ? <p className="notice" data-question-deferral>{questionReview.sourceAnswerTextVerified === true ? 'Answer text checked by you. ' : 'Source answer text not yet checked. '}Grammar connections intentionally deferred. Reference only; excluded from scored and scheduled use.</p> : content.kind === 'question' && (p.answerVerified !== true || p.targetsVerified !== true) && <p className="notice">Answer key and grammar targets are unresolved. This question is excluded from scored use.</p>}
     {(p.japanese || p.originalJapanese || p.prompt) && <p className="japanese sentence" lang="ja">{text(p.japanese || p.originalJapanese || p.prompt)}</p>}
-    {p.fieldPath && <p className="field-label">Supplement to {text(p.fieldPath)}</p>}
-    {content.kind === 'sentence' && <p className="field-label">Reading: <span lang="ja">{text(p.reading) || 'Not supplied'}</span></p>}
-    {content.kind !== 'sentence' && p.reading && <p lang="ja" className="reading">{text(p.reading)}</p>}
+    {p.fieldPath && content.status === 'draft' && <p className="field-label">Supplement to {text(p.fieldPath)}</p>}
+    {(displayReading || text(p.reading)) && <p lang="ja" className="reading">{displayReading || text(p.reading)}</p>}
     {p.translation && <p>{text(p.translation)}</p>}
-    {p.kind === 'dictionaryKanjiReference' && <div data-wanikani-reference>
-      <p className="field-label">Radical combination</p>
-      <p>{Array.isArray(p.radicalCombinations) && p.radicalCombinations.map((radical, i) => {
-        const r = object(radical);
-        return <span key={i}>{i > 0 && ' + '}<span lang="ja">{text(r.glyph)}</span> {text(r.name)}</span>;
-      })}</p>
-      <p className="muted">WaniKani learning labels; not historical etymology.</p>
-      <p className="field-label">Meaning mnemonic · excerpt</p>
-      <p>{text(p.meaningMnemonicExcerpt)}…</p>
-      {text(p.meaningMnemonicUrl).startsWith('https://www.wanikani.com/kanji/') && <a href={text(p.meaningMnemonicUrl)} target="_blank" rel="noopener noreferrer">Full mnemonic on WaniKani</a>}
-      <p className="field-label">Word combinations</p>
-      <ul>{Array.isArray(p.combinations) && p.combinations.map((word, i) => {
-        const w = object(word);
-        return <li key={i}><span lang="ja">{text(w.term)}（{text(w.reading)}）</span> · {text(w.meaning)}</li>;
-      })}</ul>
-    </div>}
-    {content.kind === 'sentence' && !p.translation && !text(p.meanings) && <p className="muted">Translation / meaning not supplied by book.</p>}
+    {['dictionaryKanjiReference','generatedKanjiMnemonic'].includes(text(p.kind)) && <KanjiMnemonic payload={p} targetMeanings={targetMeanings}/>}
+    {showEvidence && p.kind === 'vocabularyComponentAid' && <p>Supplementary component readings and meanings, checked against dictionary references. These are study aids; the textbook fields remain separate.</p>}
+    {meaningSupplement && <div data-example-meaning><Origin origin={meaningSupplement.origin} dictionary={meaningSupplement.sourceEntries.some(c=>c.source.sourceType==='dictionary')}/>{object(meaningSupplement.payloadJson).addedBy === 'AI' && <span className="badge generated" data-ai-addition>Added by AI</span>}{!p.translation && !text(p.meanings) && <p>{text(object(meaningSupplement.payloadJson).selectedMeanings)}</p>}{showEvidence && text(object(meaningSupplement.payloadJson).acceptedLimitations) && <p className="notice" data-ai-limitations>AI addition accepted by you. Source meaning or reading not independently verified: {text(object(meaningSupplement.payloadJson).acceptedLimitations)}</p>}{showEvidence && <details><summary>Meaning evidence</summary><Citations citations={meaningSupplement.sourceEntries}/></details>}</div>}
+    {content.kind === 'sentence' && !p.translation && !text(p.meanings) && !meaningSupplement && <p className="muted">Translation / meaning not supplied by book.</p>}
     {(p.meanings || p.selectedMeanings) && <p>{text(p.meanings || p.selectedMeanings)}</p>}
     {Array.isArray(p.options) && <ol>{p.options.map((option, i) => <li key={i} lang="ja">{text(object(option).label)}. {text(object(option).text)}</li>)}</ol>}
     {deferred && <div><p className="field-label">{questionReview.sourceAnswerTextVerified === true ? 'Source answer text · checked by you' : 'Source answer text'}</p><p lang="ja" data-source-answer-text>{text(object(p.answer_specification ?? null).source_answer_text)}</p></div>}
-    {text(p.acceptedLimitations) && <p className="notice" data-ai-limitations>AI addition accepted by you. Source meaning or reading not independently verified: {text(p.acceptedLimitations)}</p>}
+    {showEvidence && text(p.acceptedLimitations) && <p className="notice" data-ai-limitations>AI addition accepted by you. Source meaning or reading not independently verified: {text(p.acceptedLimitations)}</p>}
     {uncertainty && <p className="notice">Unresolved: {uncertainty}</p>}
-    <details><summary>Source citations</summary><Citations citations={content.sourceEntries} /></details>
+    {showEvidence && <details><summary>Sources &amp; evidence</summary><Origin origin={content.origin} dictionary={dictionary}/>{p.kind === 'vocabularyComponentAid' && <p className="muted">Dictionary extracts adapted from JMdict and KANJIDIC2, © EDRDG and Jim Breen, <a href="https://www.edrdg.org/edrdg/licence.html" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>. Contextual reading review and gloss selection by AI.</p>}<Citations citations={content.sourceEntries} /></details>}
   </article>;
 }
 export function Pagination({path, page, count, query = ''}: {path: string; page: number; count: number; query?: string}) {
@@ -71,5 +76,5 @@ export function Pagination({path, page, count, query = ''}: {path: string; page:
 }
 export function Fact({label, value, origins, citations}: {label: string; value: string; origins?: string[]; citations?: Citation[]}) {
   const evidence = citations?.filter(c => origins?.includes(c.id)) || [];
-  return <div className="fact"><dt>{label}</dt><dd>{value || <span className="muted">Not supplied</span>}{evidence.length > 0 && <Citations citations={evidence} />}</dd></div>;
+  return <div className="fact"><dt>{label}</dt><dd>{value || <span className="muted">Not supplied</span>}{evidence.length > 0 && <details><summary>Field evidence</summary><Citations citations={evidence}/></details>}</dd></div>;
 }

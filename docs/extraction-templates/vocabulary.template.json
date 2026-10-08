@@ -8,6 +8,24 @@
   },
   "pdf_pages_processed": [1],
   "unreadable_pdf_pages": [],
+  "component_aids": [
+    {
+      "vocabulary_source_record_key": null,
+      "word": "学校",
+      "vocabulary_reading": "がっこう",
+      "source_pdf_pages": [1],
+      "component_index": 0,
+      "component_text": "学",
+      "suggested_reading": "がく",
+      "japanese_word": "学ぶ",
+      "japanese_word_reading": "まなぶ",
+      "japanese_word_meaning": "to learn",
+      "origin": "generated",
+      "sources": [],
+      "review_status": "unreviewed",
+      "issues": []
+    }
+  ],
   "entries": [
     {
       "word": "学校",
@@ -18,6 +36,24 @@
       "chapter": null,
       "source_pdf_pages": [1],
       "source_printed_pages": [],
+      "kanji_components": [
+        {
+          "text": "学",
+          "meanings": ["study"],
+          "reading": null,
+          "source_pdf_pages": [1],
+          "source_printed_pages": [],
+          "issues": []
+        },
+        {
+          "text": "校",
+          "meanings": ["school"],
+          "reading": null,
+          "source_pdf_pages": [1],
+          "source_printed_pages": [],
+          "issues": []
+        }
+      ],
       "examples": [
         {
           "japanese": "学校に行きます。",

@@ -1,10 +1,10 @@
 # Implementation workflow
 
-Authority: Master Plan §§16–19. Current state includes local Docker PostgreSQL, staging/canonical import, reference pages and Phase 2 daily recall. The three existing batches were explicitly accepted without PDF comparison and promoted; independent PDF inventory/transcription acceptance remains unverified. See [Phase 2 handoff](phase-2-handoff.md) for verified behavior and remaining gates. Existing templates/reference/inspection inputs remain; Phase 3 has not started.
+Authority: Master Plan §§16–19. Current state includes local PostgreSQL, preserved import/reference features, persistent recall and Phase 3 personal-release implementation. Source batches retain acceptance without PDF comparison. See [Phase 3 handoff](phase-3-handoff.md) for verification and the pending learner-paced session gate. Phase 4 has not started.
 
 ## Ordered delivery
 
-Phase 3 remains deferred. New Graphify generation waits for confirmed integration and a clean, up-to-date default branch.
+Phase 3 recovery, dashboard, study backs and lookup are implemented; authentic time-budget usage remains to be accepted. New Graphify generation waits for confirmed integration and a clean, up-to-date default branch.
 
 | Phase | Working deliverable | Boundary |
 |---|---|---|
