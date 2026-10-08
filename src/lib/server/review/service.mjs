@@ -133,7 +133,7 @@ async function dueSelection(tx,user,now) {
 }
 export async function startSession(db,userId,{now=new Date(),includeNew=false}={}) {
  return locked(db,userId,async(tx,user)=>{
-  const prior=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
+  const prior=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
   if(prior) {
    const view=await viewInTransaction(tx,user,prior,now);
    if(view.card){if(prior.status==='paused')await tx.studySession.update({where:{id:prior.id},data:{status:'active',activeSince:now}});return {id:prior.id};}
@@ -152,7 +152,7 @@ export async function startSession(db,userId,{now=new Date(),includeNew=false}={
   return {id:s.id};
  });
 }
-async function ownedSession(tx,userId,id){const s=await tx.studySession.findFirst({where:{id,userId}});if(!s)throw new ReviewError('Session ownership mismatch',403);return s;}
+async function ownedSession(tx,userId,id){const s=await tx.studySession.findFirst({where:{id,userId,mode:'daily'}});if(!s)throw new ReviewError('Session ownership mismatch',403);return s;}
 async function viewInTransaction(tx,user,session,now) {
  const entries=session.selectionSnapshotJson.entries;
  const completed=await tx.attempt.findMany({where:{sessionId:session.id,userId:user.id,reviewLogId:{not:null}},select:{cardId:true},take:108});
@@ -248,7 +248,7 @@ export async function updateBudget(db,userId,minutes) {
  z.number().int().min(5).max(60).parse(minutes);
  return locked(db,userId,async(tx,user)=>{
   await tx.user.update({where:{id:userId},data:{settingsJson:{...user.settingsJson,timeBudgetMinutes:minutes}}});
-  const open=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}}});
+  const open=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}}});
   if(open)await tx.studySession.update({where:{id:open.id},data:{timeBudgetMinutes:open.selectionSnapshotJson.includeNew?minutes:Math.min(minutes,user.settingsJson.reviewBudgetMinutes||20)}});
   return {timeBudgetMinutes:minutes};
  });
@@ -272,7 +272,7 @@ export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
  if(!user)return {progress,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0,total:0},limits,timeBudgetMinutes:30,introductionsPaused:false,sessionId:null};
  return locked(db,userId,async(tx,u)=>{
   const {budget,dueCount,due,chosen}=await dueSelection(tx,u,now);
-  const active=await tx.studySession.findFirst({where:{userId,status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
+  const active=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
   const view=active?await viewInTransaction(tx,u,active,now):null;
   const actionableDue=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},...eligible(now)}});
   const missingGrammar=await tx.item.count({where:{kind:'grammar',status:'approved',cards:{none:{userId,objective:'grammar_cloze',status:{not:'retired'}}}}});

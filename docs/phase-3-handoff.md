@@ -1,5 +1,7 @@
 # Phase 3 personal release handoff
 
+**Acceptance update — 8 October 2026:** the learner explicitly declared Phase 3 completed and requested Phase 4 implementation. This supersedes the historical pending acceptance/Phase 4 prohibition below. Actual prior engineering evidence remains unchanged; no additional learner-paced timing measurement is claimed. See [Phase 4 handoff](phase-4-handoff.md).
+
 Authority: FINALIZED_PROJECT_PLAN.md §§3–10, 17–20 and A1/A2; approved [Phase 3 design](plans/2026-10-06-phase-3-design.md). Implementation verified on 6 October 2026. **Acceptance remains pending a learner-paced 25–35-minute daily block and 5–10-minute review-only stop/resume.** Automated timing tests establish persistence, not actual study usability. Do not start Phase 4 on this evidence alone.
 
 The [8 October content and Neon follow-up](phase-3-content-neon-followup.md) supersedes the earlier pending mnemonic preview: the user authorized complete original generated memory aids without another manual approval step, and all 38 were published through the existing provenance path. It also combines repeated word supplements in presentation and transfers the active database to Neon with verified recovery. Earlier local-only database descriptions are historical; the learner-paced Phase 3 gate remains pending.

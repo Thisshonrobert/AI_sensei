@@ -28,7 +28,7 @@ function failure(error:unknown){
 export async function GET(request:NextRequest){
  if(!local(request)||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Local access only'},403);
  try {
-  const session=await db.studySession.findFirst({where:{userId:LOCAL_USER_ID,status:{in:['active','paused']}},orderBy:{startedAt:'desc'},select:{id:true}});
+  const session=await db.studySession.findFirst({where:{userId:LOCAL_USER_ID,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'},select:{id:true}});
   return send(session?await sessionView(db,LOCAL_USER_ID,session.id):null);
  }catch(error){return failure(error);}
 }

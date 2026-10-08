@@ -1,5 +1,18 @@
 # Tooling and verification
 
+## Phase 4 update — 8 October 2026
+
+The learner accepted Phase 3 and authorized Phase 4. Assessment uses `/weekly` and `/api/assessment`, an explicit reviewed bank intake, persisted selection/answers, server reading deadlines, assisted continuation and self/rule outcome reports. See [Phase 4 handoff](phase-4-handoff.md) for final actual verification and remaining live-content approval, and [bank contract](assessment-bank.md) for intake. The earlier pending Phase 3 statements below are historical. The active `.env` and process connection were classified as local during this implementation; the explicit Neon target is retained separately, without an automatic switch or sync.
+
+```powershell
+rtk proxy bun.cmd run test:assessment
+rtk proxy bun.cmd run build
+rtk proxy bun.cmd run test:assessment:browser
+rtk proxy bun.cmd run test:assessment:neon
+```
+
+The first two test runners create distinct synthetic localhost databases; the Neon runner explicitly selects `POSTGRES_DATABASE_URL`, requires Neon/TLS and creates a separate database there. No real learner library is reset or populated with fixtures. Logs/target records stay in ignored `.local/`. Browser fixtures use port 3101, leaving an existing study server alone. Run only the applicable configured-target checks; Node executes database/server/import code.
+
 Authority: Master Plan §§8, 16, 18–20. **Current scope: local PostgreSQL, preserved import/reference pages, daily recall and Phase 3 personal-release implementation.** The three existing batches were accepted without PDF comparison and promoted with exact approvals. The independent PDF intake/transcription gate and learner-paced release acceptance remain unverified; see [Phase 3 handoff](phase-3-handoff.md).
 
 ## Establish tooling in phase 1
