@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-const id=z.string().uuid(),text=z.string().trim().min(1).max(10000),ids=z.array(id).max(60).refine(a=>new Set(a).size===a.length);
+const id=z.string().uuid(),text=z.string().trim().min(1).max(10000),ids=z.array(id).max(120).refine(a=>new Set(a).size===a.length);
 export const questionSchema=z.object({
  id,domain:z.enum(['vocabulary','kanji','grammar','reading']),
  objective:z.enum(['vocab_reading_meaning','kanji_meaning','kanji_reading_context','grammar_cloze','grammar_formation','comprehension']),

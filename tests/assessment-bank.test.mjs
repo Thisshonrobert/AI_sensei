@@ -15,3 +15,7 @@ test('bank rejects dangling primary targets, unsafe choice keys and unpaired rea
  const c=bank();c.questions[0].rubric.mode='choice';c.questions[0].rubric.acceptableAnswers=['X'];assert.throws(()=>parseBank(c));
  const r=bank();r.questions[0].domain='reading';r.questions[0].passageId=randomUUID();assert.throws(()=>parseBank(r));
 });
+test('cumulative passages retain exposure links for an 85-item study week',()=>{
+ const b=bank();b.questions[0].exposesItemIds=Array.from({length:85},()=>randomUUID());
+ assert.equal(parseBank(b).questions[0].exposesItemIds.length,85);
+});

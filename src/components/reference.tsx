@@ -16,7 +16,8 @@ export function ItemLink({item}: {item: CatalogItem}) {
   return <Link data-item-link href={`/${item.kind}/${item.id}`} className="entry-link"><span lang="ja" className="japanese">{name(item)}</span><span>{item.vocabulary?.reading && <span lang="ja" className="reading">{item.vocabulary.reading} · </span>}{summary(item)}</span></Link>;
 }
 export function Origin({origin, dictionary = false}: {origin: string; dictionary?: boolean}) {
-  return <span className={`badge ${origin === 'generated' ? 'generated' : ''}`}>{dictionary ? 'Dictionary · curated' : origin === 'book' ? 'Book' : origin === 'generated' ? 'Generated' : 'User'}</span>;
+  if(dictionary)return null;
+  return <span className={`badge ${origin === 'generated' ? 'generated' : ''}`}>{origin === 'book' ? 'Book' : origin === 'generated' ? 'Generated' : 'User'}</span>;
 }
 export function Citations({citations}: {citations: Citation[]}) {
   return <ul className="citations">{citations.map(c => <li key={c.id}>
@@ -51,7 +52,9 @@ export function ContentBlock({content,targetMeanings,meaningSupplement,displayRe
   const uncertainty = text(p.uncertainty);
   const questionReview = object(p.questionReview ?? null);
   const deferred = content.kind === 'question' && questionReview.grammarConnections === 'intentionally_deferred';
-  return <article data-content-id={content.id} className={`content-block ${content.status === 'draft' ? 'draft' : ''}`}>
+  const japanese = text(p.japanese || p.originalJapanese || p.prompt);
+  const wordExample = content.kind === 'sentence' && japanese.length > 0 && japanese.length <= 24 && !/[\s。、！？!?]/u.test(japanese);
+  return <article data-content-id={content.id} className={`content-block ${wordExample ? 'word-example' : ''} ${content.status === 'draft' ? 'draft' : ''}`}>
     <div className="flex flex-wrap gap-2 items-center">{content.origin === 'generated' && <Origin origin={content.origin}/>} {p.addedBy === 'AI' && <span className="badge generated" data-ai-addition>Added by AI</span>}{(content.successor || deferred || content.status === 'draft') && <span className="status">{content.successor ? `Historical revision ${content.revision} · superseded` : deferred ? 'Reference only · connections deferred' : 'Unresolved draft · reference only'}</span>}</div>
     {deferred ? <p className="notice" data-question-deferral>{questionReview.sourceAnswerTextVerified === true ? 'Answer text checked by you. ' : 'Source answer text not yet checked. '}Grammar connections intentionally deferred. Reference only; excluded from scored and scheduled use.</p> : content.kind === 'question' && (p.answerVerified !== true || p.targetsVerified !== true) && <p className="notice">Answer key and grammar targets are unresolved. This question is excluded from scored use.</p>}
     {(p.japanese || p.originalJapanese || p.prompt) && <p className="japanese sentence" lang="ja">{text(p.japanese || p.originalJapanese || p.prompt)}</p>}

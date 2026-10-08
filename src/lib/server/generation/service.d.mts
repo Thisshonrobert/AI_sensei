@@ -1,0 +1,19 @@
+export type Target={id:string;kind:string;revision:number;writtenForm:string;meaning:string|string[];reading?:string;formation?:string[];variants:unknown[]};
+export type Draft={version:1;kind:'sentence'|'passage';title:string;japanese:string;translation:string;uses:{itemId:string;start:number;end:number;reading:string;sense:string}[];omissions:{itemId:string;reason:string}[];support:{start:number;end:number;classification:string;explanation:string}[];issues:{start:number;end:number;code:string;reason:string}[];sentences?:{start:number;end:number;translation:string}[];questions:{prompt:string;targetIds:string[];options:{label:string;text:string}[];answer:string;explanation:string;evidence:{start:number;end:number}}[]};
+export type Run={id:string;status:string;purpose?:string;provider:string;modelId:string;scope:{targets:Target[];support:Target[]};prompt:string;report?:{failure?:string;analyzerStatus:string;analysisNote:string;problems:{key:string;code:string;reason:string}[];untracked:unknown[];tokens?:unknown[];languageStatus:string;providerReport?:{reviewStatus:string;reviewFailure:string|null;modelReview:{verdict:string;summary:string;findings:{code:string;reason:string}[]}|null}};draft?:Draft|null;sentences?:{id:string;start:number;end:number;japanese:string;translation:string|null}[];hash?:string|null;contentId?:string|null;revision?:number|null};
+export type RunSummary={id:string;purpose:string;status:string;topic:string};
+export class GenerationError extends Error {status:number;}
+export const MAX_REVIEW_FINDINGS:number;
+export const MAX_APPROVAL_BODY_CHARS:number;
+export function generationTargets(db:unknown,userId:string):Promise<Target[]>;
+export function generationPoolCount(db:unknown,userId:string):Promise<number>;
+export function generationList(db:unknown,userId:string):Promise<RunSummary[]>;
+export function exportPrompt(db:unknown,userId:string,input:unknown):Promise<Run>;
+export function importDraft(db:unknown,userId:string,id:string,input:unknown,modelId?:string):Promise<Run>;
+export function generationView(db:unknown,userId:string,id:string):Promise<Run>;
+export function approveDraft(db:unknown,userId:string,id:string,input:unknown):Promise<Run>;
+export function retireRun(db:unknown,userId:string,id:string,reason:string):Promise<Run>;
+export function hideRun(db:unknown,userId:string,id:string):Promise<{hidden:boolean}>;
+export function generateDraft(db:unknown,userId:string,input:unknown):Promise<Run>;
+export function saveContext(db:unknown,userId:string,input:unknown):Promise<{saved:boolean}>;
+export function savedContexts(db:unknown,userId:string,itemId:string):Promise<{contentId:string;revision:number;sentenceId:string;japanese:string;translation:string|null;origin:string}[]>;
