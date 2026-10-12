@@ -146,6 +146,64 @@ input::placeholder, textarea::placeholder { color: #626959; opacity: 1; }
 .word-example details, .word-example .notice { text-align: left; }
 .browse-back-title { text-align: center; font-size: 2.6rem; }
 .component-glyph { font-size: 2.6rem; }.component-reading { color: #293a31; }
+/* Illustrated study dashboard and shared landscape footer. */
+.vocabulary-kanji-tiles .component-glyph { display:inline-flex; align-items:center; justify-content:center; min-width:3.3rem; min-height:3.3rem; padding:.2rem .45rem; border:1px dashed #9345cf; color:#782ab2; line-height:1.2; text-decoration:none; }
+.vocabulary-kanji-tiles a.component-glyph:hover { background:#f6effc; }
+.study-dashboard > .lead { margin-bottom:2rem; }
+.dashboard-start { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(0,1fr); gap:1.25rem; margin-bottom:1.25rem; }
+.dashboard-card { background:#fffefa; border:1px solid #d6d9d0; border-radius:17px; padding:1.4rem; min-width:0; }
+.dashboard-card h2 { margin:0 0 .5rem; font-family:inherit; font-weight:600; font-size:1.2rem; }
+.dashboard-review { display:grid; grid-template-columns:minmax(120px,.9fr) minmax(0,1.1fr); gap:1rem; align-items:center; margin:0; }
+.study-companion { width:100%; height:auto; }
+.stat-number { font-family:Georgia,'Yu Mincho',serif; font-size:2.7rem; font-weight:600; line-height:1.15; margin:.5rem 0 1rem; font-variant-numeric:tabular-nums; }
+.stat-number > span { display:block; font:400 .9rem/1.5 'Segoe UI','Yu Gothic',sans-serif; color:#626959; margin-top:.35rem; }
+.dashboard-review .eyebrow { margin-top:0; }
+.dashboard-learning { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; }
+.dashboard-learning p { font-size:.9rem; }
+.learning-symbol { font-family:'Yu Mincho',serif; font-size:2rem; color:#6c814f; background:#eef2e6; border-radius:50%; width:3.5rem; height:3.5rem; display:grid; place-items:center; margin-bottom:.8rem; }
+.dashboard-card .button-link { border-radius:7px; font-size:.9rem; }
+.review-clear { color:#426445; font-weight:600; }
+.dashboard-activity { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.25rem; }
+.streak-heading { display:flex; justify-content:space-between; align-items:center; }
+.streak-heading .stat-number > span { display:inline; margin-left:.45rem; }
+.streak-flower { color:#cc7659; font-size:3.7rem; line-height:1; }
+.streak-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); padding:0; margin:.6rem 0 1.1rem; list-style:none; gap:.35rem; }
+.streak-week li { display:flex; align-items:center; flex-direction:column; gap:.6rem; color:#626959; padding:.45rem 0; font-size:.8rem; border-radius:7px; }
+.streak-week .is-today { background:#eef1e7; color:#293a31; font-weight:600; }
+.streak-day { width:1.8rem; height:1.8rem; display:grid; place-items:center; border:1px solid #d5dacd; border-radius:50%; background:#f4f5f0; color:#87917e; font-size:1.1rem; }
+.is-active .streak-day { background:#6d825a; color:white; border-color:#6d825a; }
+.card-footnote { border-top:1px solid #d6d9d0; padding-top:.8rem; margin-bottom:0; color:#626959; font-size:.82rem; }
+.completed-reviews { position:relative; padding-right:5rem; }
+.completed-reviews .activity-symbol { position:absolute; right:1.4rem; top:1.4rem; }
+.activity-symbol { flex-shrink:0; color:#637850; background:#eef2e6; border-radius:50%; width:3.5rem; height:3.5rem; display:grid; place-items:center; font-family:'Yu Mincho',serif; font-size:1.1rem; }
+.weekly-symbol { background:#f8eadb; color:#98714d; }
+.practice-stat { display:flex; align-items:center; gap:1.3rem; }
+.practice-stat .stat-number { margin:.4rem 0 .7rem; }
+.practice-stat a { font-size:.85rem; }
+.practice-stat .muted { font-size:.85rem; }
+.dashboard-section-heading { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; margin-top:1.3rem; }
+.dashboard-section-heading .muted { font-size:.8rem; }
+.study-dashboard .shelf { border:0; gap:1.25rem; margin:.7rem 0 1.5rem; }
+.study-dashboard .shelf-section { background:#fffefa; border:1px solid #d6d9d0; border-radius:17px; padding:1.3rem; }
+.study-dashboard .shelf-section:hover { background:#f4f4ec; }
+.study-dashboard .shelf-japanese { float:right; font-size:1.3rem; }
+.study-dashboard .shelf-section h3 { font-size:1rem; font-weight:600; margin:0 0 .75rem; }
+.study-dashboard .shelf-section .stat-number { font-size:2.4rem; }
+.study-dashboard .shelf-section > span:last-child { display:block; font-size:.8rem; margin-top:.8rem; }
+.study-dashboard progress { appearance:none; display:block; width:100%; height:.4rem; border:0; border-radius:8px; overflow:hidden; background:#edece5; accent-color:#7d5798; }
+.study-dashboard progress::-webkit-progress-bar { background:#edece5; }.study-dashboard progress::-webkit-progress-value { background:#7d5798; border-radius:8px; }.study-dashboard progress::-moz-progress-bar { background:#7d5798; }
+.progress-kanji progress { accent-color:#c77b66; }.progress-kanji progress::-webkit-progress-value { background:#c77b66; }.progress-kanji progress::-moz-progress-bar { background:#c77b66; }
+.progress-grammar progress { accent-color:#6d825a; }.progress-grammar progress::-webkit-progress-value { background:#6d825a; }.progress-grammar progress::-moz-progress-bar { background:#6d825a; }
+.dashboard-settings { margin:1.5rem 0; }
+.reading-completion { margin:1.5rem 0; padding:1rem; border:1px solid #d6d9d0; border-radius:10px; background:#f0f3e9; }
+.reading-completion p { margin:.5rem 0 0; font-size:.85rem; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+footer.illustrated-footer { width:100%; max-width:none; padding:0; margin:0; border:0; }
+.footer-landscape { height:280px; width:100%; background:url('/illustrations/wanikani-footer.gif') no-repeat center bottom; background-size:auto 280px; }
+.footer-caption { display:flex; flex-wrap:wrap; justify-content:center; gap:.4rem 2rem; padding:1rem 2rem; font-size:.7rem; background:#faf9f5; border-top:1px solid #d6d9d0; }
+.footer-caption a { color:#626959; }
+@media(max-width:800px) { .dashboard-start { grid-template-columns:1fr; }.dashboard-learning { display:block; }.learning-symbol { float:right; }.dashboard-section-heading { display:block; }.completed-reviews { padding-right:1.4rem; }.completed-reviews .activity-symbol { position:static; float:right; } }
+@media(max-width:650px) { body:has(.illustrated-footer) { height:auto; min-height:100dvh; overflow:visible; }body:has(.illustrated-footer) main { flex:none; overflow:visible; width:100%; }footer.illustrated-footer { flex:none; min-height:0; }.dashboard-activity { grid-template-columns:1fr; }.dashboard-review { grid-template-columns:1fr; }.study-companion { width:200px; justify-self:center; }.dashboard-card { padding:1.2rem; }.study-dashboard .shelf { grid-template-columns:1fr; }.footer-landscape { height:165px; background-size:auto 165px; }.footer-caption { padding:1rem 1.2rem 5.5rem; font-size:.65rem; }.streak-week { gap:.2rem; } }
 .review-cue .japanese { font-size: clamp(2rem, 5vw, 3.5rem); }
 .practice { max-width: 900px; }
 .practice-compose { padding: clamp(1.2rem,3vw,2rem); margin-block: 2rem; border: 1px solid var(--study-border); border-radius: var(--study-radius); background: #f2f4ee; }
@@ -163,11 +221,16 @@ input::placeholder, textarea::placeholder { color: #626959; opacity: 1; }
 .reader-controls { padding-bottom: 1rem; border-bottom: 1px solid var(--study-border); }
 .reader-controls label { font-size: .85rem; color: #505c4d; }
 .reader-sentence { margin-block: 1rem; }
-.practice .reading-passage { font-size: clamp(1.4rem, 3vw, 1.65rem); line-height: 2.15; letter-spacing: .025em; }
-.reader-word { display: inline; min-height: 0; border: 0; border-radius: 3px; padding: 0; background: transparent; font: inherit; color: inherit; text-align: inherit; border-bottom: 1px dotted #89937f; }
-.reader-word:not(:disabled):hover, .reader-word:focus-visible { background: transparent; color: inherit; border-bottom: 3px solid #86b8b6; }
+.practice .reading-passage { font-size: clamp(1.4rem, 3vw, 1.65rem); line-height: 2.15; letter-spacing: .025em; white-space: normal; }
+.reader-word { display: inline; min-height: 0; border: 0; border-radius: 0; padding: 0; background: transparent; font: inherit; color: inherit; text-align: inherit; border-bottom: 3px solid transparent; }
+.reader-word:not(:disabled):hover, .reader-word:focus-visible, .reader-word[aria-expanded=true] { background: transparent; color: inherit; border-bottom-color: #bee0f1; }
+.reader-popup { position: fixed; z-index: 30; width: min(420px,calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; margin: 0; border: 1px solid var(--study-border); border-radius: 12px; box-shadow: 0 8px 24px rgb(41 40 34 / 16%); }
+.reader-popup h3 { margin-block: .4rem; }.reader-popup p { margin-block: .6rem; line-height: 1.5; }.reader-popup label { margin-block: .6rem .3rem; }.reader-popup input { width: 100%; }.reader-popup .field-label { font-size: .8rem; }
+.reader-popup form { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .4rem; margin-block: .6rem; }.reader-popup form label { grid-column: 1 / -1; }.reader-popup form button { margin: 0; padding-inline: .65rem; }.reader-popup form input { min-width: 0; }
+@media(max-width:650px) { .reader-popup { top: auto !important; left: 16px !important; bottom: max(16px,env(safe-area-inset-bottom)); width: calc(100vw - 32px); max-height: min(70dvh,calc(100dvh - 32px)); } }
 .reader-word .reader-ruby-on-request rt { visibility: hidden; }
 .reader-word:hover .reader-ruby-on-request rt, .reader-word:focus-visible .reader-ruby-on-request rt { visibility: visible; }
+.reader-dictionary-senses { padding-inline-start: 1.2rem; }.reader-dictionary-senses ol { padding-inline-start: 1.2rem; }.reader-dictionary-senses li { margin-block: .5rem; overflow-wrap: anywhere; }.reader-dictionary-source { line-height: 1.6; margin-block: 1rem; }
 .reader-sentence > button { font-size: .8rem; padding: .35rem .7rem; font-weight: 400; }
 .practice-coverage, .practice-ai-review { border-top: 1px solid var(--study-border); padding-block: .5rem; }
 .coverage-words { display: flex; flex-wrap: wrap; gap: .5rem 1rem; font-size: 1.3rem; }

@@ -128,6 +128,8 @@ model Content {
   revision        Int
   supersedesId    String? @unique @db.Uuid
   parentContentId String? @db.Uuid
+  generationRunId String? @db.Uuid
+  generationRun GenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
   createdAt       DateTime @default(now()) @db.Timestamptz(6)
   supersedes      Content? @relation("ContentRevisions", fields: [supersedesId], references: [id], onDelete: Restrict)
   successor       Content? @relation("ContentRevisions")
@@ -217,6 +219,7 @@ model User {
   sessions StudySession[]
   attempts Attempt[]
   reviews ReviewLog[]
+  generationRuns GenerationRun[]
   @@map("users")
 }
 
@@ -289,9 +292,31 @@ model StudySession {
   items SessionItem[]
   attempts Attempt[]
   reviews ReviewLog[]
+  generationRuns GenerationRun[]
   @@unique([id,userId])
   @@index([userId,status])
   @@map("study_sessions")
+}
+
+model GenerationRun {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  sessionId String? @db.Uuid
+  purpose String
+  provider String @default("manual-import")
+  modelId String @default("unknown")
+  promptVersion String
+  inputSnapshotJson Json
+  validatorVersion String
+  validationReportJson Json @default("{}")
+  status String @default("exported")
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  completedAt DateTime? @db.Timestamptz(6)
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  session StudySession? @relation(fields:[sessionId,userId], references:[id,userId], onDelete:Restrict)
+  content Content[]
+  @@index([userId,createdAt])
+  @@map("generation_runs")
 }
 
 model SessionItem {

@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next';
 
 const config: NextConfig = {
+  serverExternalPackages: ['kuromoji'],
+  outputFileTracingIncludes: { '/*': ['./node_modules/kuromoji/dict/**/*'] },
   poweredByHeader: false,
   async headers() {
     return [{ source: '/:path*', headers: [

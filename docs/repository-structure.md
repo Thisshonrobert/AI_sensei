@@ -45,7 +45,7 @@ Phase 2 is implemented: `src/lib/server/review/` contains the pinned FSRS adapte
 - Phase 2: `src/lib/server/review/` owns scheduler configuration, persisted objectives, queue eligibility, and transactional review submission.
 - Phase 3: the same review service supplies dashboard/budget/attention behavior; `content/study.mjs` retrieves approved backs/comparisons; `components/study-content.tsx`, `dictionary.tsx` and `daily-budget.tsx` render them. `scripts/backup.mjs` owns private backup/export and separate-target verified restore. Evidence is in [Phase 3 handoff](phase-3-handoff.md).
 - Phase 4: `src/lib/server/assessment/` owns cumulative eligibility, selection snapshots, timing, and scoring separate from FSRS.
-- Phase 5: `src/lib/server/generation/` owns bounded prompt export/manual draft import, language-scope validation, and publication gates.
+- Phase 5: `src/lib/server/generation/` and `/practice` provide manual intake, optional Gemini drafts, kuromoji analysis, human publication, reading aids and saved contexts. Additive `GenerationRun` migrations retain provenance; approved generated questions reuse assessment, with retirement preserving attempts. Live Gemini activation awaits project Free Tier confirmation; see [handoff](phase-5-handoff.md).
 - Add shared database helpers/validation only when the implementing slice needs them. Do not establish empty service interfaces for every future feature.
 - `public/` later contains deliberately public app assets only. Book pages, learner records, and private fonts/credentials never belong there.
 - `.local/` may hold concise ignored progress/handoff notes. `graphify-out/` is created only by an explicitly scoped engineering-index run.

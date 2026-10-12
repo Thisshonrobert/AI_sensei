@@ -10,7 +10,7 @@
   "unreadable_pdf_pages": [],
   "component_aids": [
     {
-      "vocabulary_source_record_key": null,
+      "vocabulary_source_record_key": "vocabulary/batch_001/entry_001",
       "word": "学校",
       "vocabulary_reading": "がっこう",
       "source_pdf_pages": [1],
@@ -28,6 +28,7 @@
   ],
   "entries": [
     {
+      "source_record_key": "vocabulary/batch_001/entry_001",
       "word": "学校",
       "reading": "がっこう",
       "meanings": ["school"],

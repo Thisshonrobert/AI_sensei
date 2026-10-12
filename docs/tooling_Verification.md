@@ -158,3 +158,7 @@ rtk bun run start
 `dev`/`start` bind `127.0.0.1:3000`. Browser checks launch a production server and the installed Microsoft Edge; build first and stop any existing server on port 3000 before testing. PostgreSQL must be running. `start` needs the production build; `dev` does not. There are no web mutation endpoints in this slice.
 
 Framework setup follows the official [Next.js installation](https://nextjs.org/docs/app/getting-started/installation), [ESLint configuration](https://nextjs.org/docs/app/api-reference/config/eslint) and [Tailwind Next.js guide](https://tailwindcss.com/docs/installation/framework-guides/nextjs). Next.js 16 uses the separate ESLint CLI; build is not a substitute for lint.
+
+### Lesson exercise checks — 9 October 2026
+
+`rtk bun run test:lesson-exercises:postgres` runs focused checks in an isolated synthetic PostgreSQL database. After a production build, `rtk bun run test:lesson-exercises:browser` also starts a separate dynamic-port production server and checks commitment/reveal, refresh, answer redaction, cross-origin rejection and mobile wrapping. Neither runner changes the real learner library. See [batch handoff](batch-readiness-handoff.md) for actual results and content gates.

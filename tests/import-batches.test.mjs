@@ -33,6 +33,24 @@ test('keeps all schema v2 grammar records and warns when answer keys are unrevie
   assert.equal(result.issues.filter((issue) => issue.code === 'answer-key-unreviewed').length, 0);
 });
 
+test('missing grammar exercise heading remains null without fabricating source text',()=>{
+ const input=grammarBatch();input.lesson_questions[0].exercise_section=null;
+ const result=sanitizeBatch(input);
+ assert.equal(result.batch.lesson_questions[0].exercise_section,null);
+ assert.equal(result.batch.lesson_questions[0].question_number,'1');
+ assert.ok(result.issues.some(issue=>issue.code==='missing-exercise-section'));
+});
+
+test('public extraction templates match the staging contract and retain supplemental/source fields',async()=>{
+ for(const kind of ['vocabulary','kanji','grammar']){
+  const input=JSON.parse(await readFile(new URL(`../docs/extraction-templates/${kind}.template.json`,import.meta.url),'utf8'));
+  const {batch}=sanitizeBatch(input);
+  assert.equal(batch.content_type,kind);
+  assert.deepEqual(batch.entries,input.entries);
+  if(kind==='vocabulary')assert.deepEqual(batch.component_aids,input.component_aids);
+ }
+});
+
 test('fails malformed structure instead of dropping a record', () => {
   const input = { schema_version: 1, content_type: 'vocabulary', source: { book_id: 'book-a', book_title: 'Book A', file_name: 'source.pdf' }, pdf_pages_processed: [1], unreadable_pdf_pages: [], entries: [{ word: '語', reading: null, meanings: [], parts_of_speech: null, jlpt_level: null, chapter: null, source_pdf_pages: [1], source_printed_pages: [], examples: [], notes: null, review_status: 'unreviewed', issues: [] }] };
   input.entries.push({ word: 'lost', reading: 12 });

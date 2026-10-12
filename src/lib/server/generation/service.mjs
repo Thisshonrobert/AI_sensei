@@ -6,6 +6,7 @@ import { analyzeDraft } from './analyzer.mjs';
 import { providerConfiguration,geminiRequest,GeminiError } from './gemini.mjs';
 import { questionSchema } from '../assessment/bank.mjs';
 import { sentenceUnits } from './reading.mjs';
+import { prepareReader } from './reader.mjs';
 const uuid=z.string().uuid();
 export class GenerationError extends Error {constructor(message,status=409){super(message);this.status=status;}}
 async function locked(db,userId,work){uuid.parse(userId);return db.$transaction(async tx=>{await tx.$queryRaw`SELECT id FROM users WHERE id=${userId}::uuid FOR UPDATE`;const user=await tx.user.findUnique({where:{id:userId}});if(!user)throw new GenerationError('Local learner unavailable',403);return work(tx,user);},{timeout:30000,maxWait:30000});}
@@ -50,10 +51,27 @@ export async function exportPrompt(db,userId,input,provider='manual-import'){
  });
 }
 async function view(tx,r){
+ const reading=await tx.studySession.findFirst({where:{userId:r.userId,mode:'practice',status:'completed',selectionSnapshotJson:{path:['runId'],equals:r.id}},select:{endedAt:true}});
  const content=await tx.content.findFirst({where:{generationRunId:r.id,kind:r.purpose,successor:null},select:{id:true,status:true,revision:true,payloadJson:true}});
- return {id:r.id,status:r.status,purpose:r.purpose,modelId:r.modelId,provider:r.provider,prompt:r.inputSnapshotJson.prompt,scope:r.inputSnapshotJson.scope,report:r.validationReportJson,contentId:content?.id||null,revision:content?.revision||null,draft:content?.payloadJson.draft||null,sentences:content?.payloadJson.draft?sentenceUnits(content.payloadJson.draft):[],hash:content?.payloadJson.draft?reviewHash(content.payloadJson.draft,r.inputSnapshotJson.scope):null};
+ return {id:r.id,status:r.status,purpose:r.purpose,readingCompletedAt:reading?.endedAt?.toISOString()||null,modelId:r.modelId,provider:r.provider,prompt:r.inputSnapshotJson.prompt,scope:r.inputSnapshotJson.scope,report:r.validationReportJson,contentId:content?.id||null,revision:content?.revision||null,draft:content?.payloadJson.draft||null,sentences:content?.payloadJson.draft?sentenceUnits(content.payloadJson.draft):[],hash:content?.payloadJson.draft?reviewHash(content.payloadJson.draft,r.inputSnapshotJson.scope):null};
 }
-export async function generationView(db,userId,id){return locked(db,userId,async tx=>view(tx,await owned(tx,userId,id)));}
+export async function completeReading(db,userId,input,now=new Date()) {
+ const data=z.object({runId:uuid,revision:z.number().int().positive()}).strict().parse(input);
+ return locked(db,userId,async tx=>{
+  const r=await owned(tx,userId,data.runId);
+  const prior=await tx.studySession.findFirst({where:{userId,mode:'practice',status:'completed',selectionSnapshotJson:{path:['runId'],equals:r.id}}});
+  if(prior)return {completedAt:prior.endedAt.toISOString()};
+  const v=await view(tx,r);
+  if(r.purpose!=='passage'||!['draft','approved'].includes(r.status)||!v.draft||v.revision!==data.revision)throw new GenerationError('Complete the current saved reading passage',422);
+  await tx.studySession.create({data:{userId,mode:'practice',status:'completed',startedAt:now,endedAt:now,selectionSeed:r.id,selectionSnapshotJson:{kind:'reading_completion',runId:r.id,contentId:v.contentId,revision:v.revision}}});
+  return {completedAt:now.toISOString()};
+ });
+}
+export async function generationView(db,userId,id){
+ const result=await locked(db,userId,async tx=>view(tx,await owned(tx,userId,id)));
+ if(result.draft)result.reader=await prepareReader(result);
+ return result;
+}
 export async function generationList(db,userId){
  const user=await db.user.findUnique({where:{id:userId},select:{settingsJson:true}}),hidden=user?.settingsJson.hiddenGeneratedRunIds||[];
  const runs=await db.generationRun.findMany({where:{userId,id:{notIn:hidden},status:{in:['draft','approved','retired']}},take:20,orderBy:{createdAt:'desc'},select:{id:true,purpose:true,status:true,createdAt:true,inputSnapshotJson:true}});

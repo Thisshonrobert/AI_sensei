@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { savedContexts } from '../generation/service.mjs';
 const uuid=z.string().uuid();
 export const comparisonSchema=z.object({explanationType:z.literal('grammar_comparison'),grammarItemIds:z.array(uuid).length(2),difference:z.string().trim().min(1).max(4000),examples:z.array(z.object({grammarItemId:uuid,contentId:uuid})).length(2)}).passthrough().refine(p=>new Set(p.grammarItemIds).size===2&&new Set(p.examples.map(e=>e.grammarItemId)).size===2&&p.examples.every(e=>p.grammarItemIds.includes(e.grammarItemId)));
 const sources={where:{verificationStatus:'verified'},take:12,select:{id:true,sourceId:true,printedPage:true,source:{select:{title:true,sourceType:true}}}};
@@ -27,6 +28,7 @@ export async function studyContent(db,card){
  const typed=pinned?.typedJson||{};
  const examples=item.contentLinks.filter(l=>l.content.kind==='sentence'&&text(l.content.payloadJson.japanese)).slice(0,6).map(l=>example(l.content));
  const result={examples,sources:item.sourceEntries};
+ if(card.userId&&item.vocabulary)result.savedContexts=await savedContexts(db,card.userId,card.itemId);
  if(item.kanji)result.readings={on:words(typed.onReadingsJson),kun:words(typed.kunReadingsJson)};
  if(item.grammar){
   const question=card.contentId?await db.content.findFirst({where:{id:card.contentId,status:'approved',kind:'question'},select:contentSelect}):null;

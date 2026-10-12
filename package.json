@@ -21,6 +21,10 @@
     "test:assessment:browser": "node scripts/test-assessment-postgres.mjs --browser",
     "test:assessment:neon": "node scripts/test-assessment-postgres.mjs --neon",
     "assessment:bank": "node scripts/assessment-bank.mjs",
+    "test:generation": "node scripts/test-generation-postgres.mjs",
+    "test:generation:browser": "node scripts/test-generation-postgres.mjs --browser",
+    "test:lesson-exercises:postgres": "node scripts/test-lesson-exercises-postgres.mjs",
+    "test:lesson-exercises:browser": "node scripts/test-lesson-exercises-postgres.mjs --browser",
     "backup": "node scripts/backup.mjs",
     "test:recovery": "node scripts/test-review-postgres.mjs --recovery",
     "db:target": "node scripts/database-target.mjs",
@@ -28,6 +32,7 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.0",
+    "kuromoji": "0.1.2",
     "next": "16.3.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",

@@ -93,3 +93,13 @@ Private `promotion-20261005/` contains immutable v2 selections/previews, per-rec
 ### Phase 3 comparison dependencies
 
 Approved comparison additions capture both approved grammar revisions/typed records and both current approved linked sentence snapshots in the existing approval hash. Correcting either pattern before promotion invalidates approval; a subsequent correction hides the published comparison until a new comparison revision is reviewed. Promote pattern corrections separately before reviewing a comparison; correction-plus-comparison selections are explicitly rejected. Draft additions remain unverified. No real comparison was approved during implementation.
+
+### Batch readiness and lesson exercises — 9 October 2026
+
+Use the [PDF extraction prompt](extraction-templates/extraction-prompt.md) with its three templates. Copy printed vocabulary component boxes, kanji example words/readings/meanings and grammar option labels faithfully; missing source values stay null or empty. `exercise_section` may be null when no heading is printed. Staging reports that omission without inventing a heading. Stable source record keys and lesson metadata connect split batches.
+
+Run the separate [enrichment prompt](extraction-templates/enrichment-prompt.md) after extraction. Dictionary evidence and original generated mnemonics remain separate from book fields and require the existing reviewed promotion workflow. Extraction itself never scrapes dictionaries or fills missing readings by guessing.
+
+After human verification of the exact book answer labels, use the [answer-reason worker brief](extraction-templates/lesson-answer-reasons-prompt.md). The bounded `node scripts/lesson-answer-reasons.mjs inspect|import <private packet> [private evidence output]` command checks current questions, exact approval evidence and answer bindings. It stores `answer_reason` inside separate generated draft explanation Content, not in the book answer specification. Conflicting ordering answers block reason generation. Repeats do not insert duplicates.
+
+`/grammar/exercises` groups by source and lesson, including split-batch source keys/counts. A positive source-established full-lesson grammar count is required; unknown totals remain locked. Every grammar point must be approved, source-verified and explicitly marked studied before starting. A batch need not be fully promoted because its question records can remain drafts. Sessions use existing practice storage, freeze questions/feedback and retain committed responses across refresh. Answers/reasons and frozen option text appear after commitment. This is ungraded: it does not approve scored questions or change familiarity, cards or FSRS. See [batch handoff](batch-readiness-handoff.md).

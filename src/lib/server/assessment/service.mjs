@@ -5,6 +5,7 @@ import { selectAssessment } from './selection.mjs';
 import { questionSchema } from './bank.mjs';
 import { normalizeReading } from '../review/service.mjs';
 import { studyDay } from '../review/scheduler.mjs';
+import { retireInTransaction } from '../generation/service.mjs';
 const uuid=z.string().uuid();
 export class AssessmentError extends Error {constructor(message,status=409){super(message);this.status=status;}}
 async function locked(db,userId,work){
@@ -15,7 +16,7 @@ async function locked(db,userId,work){
   return work(tx,user);
  },{timeout:30000,maxWait:30000});
 }
-async function owned(tx,userId,id){uuid.parse(id);const s=await tx.studySession.findFirst({where:{id,userId,mode:{in:['weekly','test','practice']}}});if(!s)throw new AssessmentError('Assessment ownership mismatch',403);return s;}
+async function owned(tx,userId,id){uuid.parse(id);const s=await tx.studySession.findFirst({where:{id,userId,mode:{in:['weekly','test','practice']}}});if(!s||['lesson-exercises','reading_completion'].includes(s.selectionSnapshotJson?.kind))throw new AssessmentError('Assessment ownership mismatch',403);return s;}
 async function pool(tx,user,now){
  const rows=await tx.userItem.findMany({where:{userId:user.id,excludedFromTests:false,item:{status:'approved'},OR:[{introducedAt:{lt:now}},{baselineStatus:{in:['assumed','verified']}}]},orderBy:{itemId:'asc'},take:2000,select:{itemId:true,introducedAt:true,baselineStatus:true,needsAttention:true,item:{select:{kind:true,status:true}}}});
  const ids=rows.map(r=>r.itemId);
@@ -27,7 +28,8 @@ async function pool(tx,user,now){
   FROM attempts a JOIN study_sessions s ON s.id=a."sessionId" WHERE a."userId"=${user.id}::uuid AND a."primaryTargetItemId"=ANY(${ids}::uuid[]) AND a."submittedAt"<${now} AND s.mode<>'practice' GROUP BY a."primaryTargetItemId"`;
  const exposure=await tx.reviewLog.findMany({where:{userId:user.id,reviewedAt:{gte:new Date(+now-48*3600000),lte:now}},take:2000,select:{reviewedAt:true,card:{select:{itemId:true}}}});
  const items=rows.map(r=>({id:r.itemId,...r.item,introducedAt:r.introducedAt?.toISOString()||null,baselineStatus:r.baselineStatus,needsAttention:r.needsAttention,...history.find(h=>h.id===r.itemId),reviewedToday:exposure.some(e=>e.card.itemId===r.itemId&&studyDay(e.reviewedAt,user.timezone)===studyDay(now,user.timezone))}));
- const contents=await tx.content.findMany({where:{kind:'question',status:'approved',successor:null,origin:{in:['book','user']},items:{some:{role:'target',itemId:{in:ids}},every:{OR:[{role:{not:'target'}},{itemId:{in:ids}}]}}},orderBy:{id:'asc'},take:1000,select:{id:true,revision:true,origin:true,payloadJson:true,parentContentId:true,items:{select:{itemId:true,role:true}},sourceEntries:{take:8,select:{sourceId:true,verificationStatus:true}}}});
+ const generationOwnership={OR:[{origin:{not:'generated'}},{generationRun:{userId:user.id,status:'approved'}}]};
+ const contents=await tx.content.findMany({where:{kind:'question',status:'approved',successor:null,origin:{in:['book','user','generated']},...generationOwnership,items:{some:{role:'target',itemId:{in:ids}},every:{OR:[{role:{not:'target'}},{itemId:{in:ids}}]}}},orderBy:{id:'asc'},take:1000,select:{id:true,revision:true,origin:true,payloadJson:true,parentContentId:true,items:{select:{itemId:true,role:true}},sourceEntries:{take:8,select:{sourceId:true,verificationStatus:true}}}});
  const prior=await tx.$queryRaw`SELECT "contentId" AS id,max(a."submittedAt") FILTER (WHERE s.mode IN ('weekly','test')) AS "lastQuestionAt",bool_or(a."feedbackJson"->>'repairRequested'='true') AS "repairRequested" FROM attempts a JOIN study_sessions s ON s.id=a."sessionId" WHERE a."userId"=${user.id}::uuid AND s.mode IN ('weekly','test','practice') AND a."contentId" IS NOT NULL AND a."submittedAt"<${now} GROUP BY a."contentId"`;
  const questions=[];
  for(const c of contents){
@@ -37,7 +39,7 @@ async function pool(tx,user,now){
   if(c.origin==='book'&&!c.sourceEntries.some(e=>e.verificationStatus==='verified'))continue;
   questions.push({...q,targetKind:items.find(i=>i.id===q.primaryTargetItemId)?.kind,baselineCheck:!items.find(i=>i.id===q.primaryTargetItemId)?.introducedAt,revision:c.revision,origin:c.origin,sourceIds:c.sourceEntries.map(e=>e.sourceId),lastQuestionAt:prior.find(h=>h.id===c.id)?.lastQuestionAt?.toISOString()||null});
  }
- const passages=await tx.content.findMany({where:{id:{in:[...new Set(questions.map(q=>q.passageId).filter(Boolean))]},kind:'passage',status:'approved',successor:null,origin:{in:['book','user']}},take:100,select:{id:true,revision:true,origin:true,payloadJson:true,items:{select:{itemId:true,role:true}},sourceEntries:{take:8,select:{verificationStatus:true}}}});
+ const passages=await tx.content.findMany({where:{id:{in:[...new Set(questions.map(q=>q.passageId).filter(Boolean))]},kind:'passage',status:'approved',successor:null,origin:{in:['book','user','generated']},...generationOwnership},take:100,select:{id:true,revision:true,origin:true,payloadJson:true,items:{select:{itemId:true,role:true}},sourceEntries:{take:8,select:{verificationStatus:true}}}});
  const validPassages=passages.filter(p=>p.payloadJson.assessment?.supportingReviewed===true&&p.payloadJson.assessment?.unresolved===false&&typeof p.payloadJson.assessment?.japanese==='string'&&p.items.filter(l=>l.role==='target').every(l=>ids.includes(l.itemId))&&(p.origin!=='book'||p.sourceEntries.some(e=>e.verificationStatus==='verified'))).map(p=>({id:p.id,revision:p.revision,origin:p.origin,...p.payloadJson.assessment}));
  // Passage links constrain eligibility; only each question's directly assessed targets consume slots.
  const validQuestions=questions.filter(q=>!q.passageId||validPassages.some(p=>p.id===q.passageId)).map(q=>q.passageId?{...q,exposesItemIds:[...new Set([...q.exposesItemIds,...validPassages.find(p=>p.id===q.passageId).exposesItemIds])]}:q);
@@ -61,8 +63,10 @@ function timing(s,now){const t=s.assessmentResultJson?.timing;return t?{...t,exp
 async function view(tx,userId,s,now){
  const snap=s.selectionSnapshotJson,done=s.status==='completed',t=timing(s,done?s.endedAt:now);
  const attempts=await tx.attempt.findMany({where:{sessionId:s.id,userId},take:20,select:{contentId:true,answerJson:true,outcome:true,feedbackJson:true,hintUsed:true}});
+ const retired=await tx.content.findMany({where:{id:{in:snap.questions.map(q=>q.id)},generationRun:{userId,status:'retired'}},take:20,select:{id:true}});
+ const invalidIds=new Set(retired.map(c=>c.id));
  const visible=snap.questions.filter(q=>q.domain!=='reading'||t||done||s.mode==='practice');
- const results=done?snap.questions.map(q=>{const a=attempts.find(a=>a.contentId===q.id);return {questionId:q.id,primaryTargetItemId:q.primaryTargetItemId,targetKind:q.targetKind,domain:q.domain,objective:q.objective,prompt:q.prompt,rubric:q.rubric,outcome:a?.outcome||'ungraded',answer:a?.answerJson||{},assisted:!!a?.hintUsed,expired:q.domain==='reading'&&!!t?.expired,canSelfGrade:q.rubric.mode==='self'&&!a?.feedbackJson?.graded&&!!a?.answerJson?.response&&!(q.domain==='reading'&&t?.expired),canReport:!!a&&!a.feedbackJson.repairRequested,repairRequested:!!a?.feedbackJson.repairRequested,sourceIds:q.sourceIds||[],origin:q.origin};}):[];
+ const results=done?snap.questions.map(q=>{const a=attempts.find(a=>a.contentId===q.id),invalidQuestion=invalidIds.has(q.id);return {questionId:q.id,primaryTargetItemId:q.primaryTargetItemId,targetKind:q.targetKind,domain:q.domain,objective:q.objective,prompt:q.prompt,rubric:q.rubric,outcome:invalidQuestion?'ungraded':a?.outcome||'ungraded',invalidQuestion,answer:a?.answerJson||{},assisted:!!a?.hintUsed,expired:q.domain==='reading'&&!!t?.expired,canSelfGrade:!invalidQuestion&&q.rubric.mode==='self'&&!a?.feedbackJson?.graded&&!!a?.answerJson?.response&&!(q.domain==='reading'&&t?.expired),canReport:!invalidQuestion&&!!a&&!a.feedbackJson.repairRequested,repairRequested:!!a?.feedbackJson.repairRequested,sourceIds:q.sourceIds||[],origin:q.origin};}):[];
  const graded=results.filter(r=>r.outcome!=='ungraded'&&!r.assisted&&!r.expired),correct=graded.filter(r=>r.outcome==='correct').length;
  return {sessionId:s.id,status:s.status,mode:s.mode,total:snap.questions.length,requestedSize:snap.requestedSize,coverage:snap.coverage,omissions:snap.omissions,readingMinutes:snap.readingMinutes,timing:t,furigana:snap.furigana,
   questions:visible.map(q=>({id:q.id,prompt:q.prompt,format:q.format,options:q.options,domain:q.domain,objective:q.objective,primaryTargetItemId:q.primaryTargetItemId,stratum:q.stratum,baselineCheck:q.baselineCheck,recentExposure:q.recentExposure,answer:attempts.find(a=>a.contentId===q.id)?.answerJson||null})),
@@ -114,10 +118,11 @@ export async function submitAssessment(db,userId,id,now=new Date()){
   const s=await owned(tx,userId,id);if(s.status==='completed')return view(tx,userId,s,now);
   const snap=s.selectionSnapshotJson,attempts=await tx.attempt.findMany({where:{userId,sessionId:id},take:20});
   const t=timing(s,now);
+  const retired=await tx.content.findMany({where:{id:{in:snap.questions.map(q=>q.id)},generationRun:{userId,status:'retired'}},take:20,select:{id:true}});const invalidIds=new Set(retired.map(c=>c.id));
   if(snap.questions.some(q=>!attempts.some(a=>a.contentId===q.id)&&!(q.domain==='reading'&&t?.expired)))throw new AssessmentError('Commit every answer before submission');
   for(const q of snap.questions){const a=attempts.find(a=>a.contentId===q.id);if(!a)continue;
    const expired=q.domain==='reading'&&!!t?.expired;
-   const outcome=expired||q.rubric.mode==='self'?'ungraded':q.rubric.acceptableAnswers.some(v=>q.rubric.mode==='reading'?normalizeReading(v)===normalizeReading(a.answerJson.response):v===a.answerJson.response)?'correct':'incorrect';
+   const outcome=expired||invalidIds.has(q.id)||q.rubric.mode==='self'?'ungraded':q.rubric.acceptableAnswers.some(v=>q.rubric.mode==='reading'?normalizeReading(v)===normalizeReading(a.answerJson.response):v===a.answerJson.response)?'correct':'incorrect';
    await tx.attempt.update({where:{id:a.id},data:{outcome,feedbackJson:{graded:expired||q.rubric.mode!=='self',expired,rubric:q.rubric}}});
    if(outcome==='incorrect')await attention(tx,userId,q);
   }
@@ -133,6 +138,7 @@ export async function selfGrade(db,userId,input,now=new Date()){
  const data=gradeSchema.parse(input);
  return locked(db,userId,async tx=>{
   const s=await owned(tx,userId,data.sessionId),q=s.selectionSnapshotJson.questions.find(q=>q.id===data.questionId);
+  if(await tx.content.findFirst({where:{id:data.questionId,generationRun:{userId,status:'retired'}},select:{id:true}}))throw new AssessmentError('Retired generated question remains ungraded');
   if(s.status!=='completed'||q?.rubric.mode!=='self')throw new AssessmentError('Submit before self scoring');
   if(q.domain==='reading'&&s.assessmentResultJson?.timing?.expired)throw new AssessmentError('Expired reading remains ungraded; continue as practice');
   if(q.objective==='vocab_reading_meaning'&&data.outcome!=='ungraded'&&!data.components)throw new AssessmentError('Assess both reading and selected meaning',400);
@@ -152,6 +158,8 @@ export async function reportQuestion(db,userId,input,now=new Date()){
   const s=await owned(tx,userId,data.sessionId);if(s.status!=='completed')throw new AssessmentError('Submit before reporting a question');
   const a=await tx.attempt.findFirst({where:{userId,sessionId:s.id,contentId:data.questionId}});if(!a)throw new AssessmentError('Committed response unavailable');
   if(!a.feedbackJson.repairRequested)await tx.attempt.update({where:{id:a.id},data:{outcome:'ungraded',feedbackJson:{...a.feedbackJson,graded:true,repairRequested:true,originalOutcome:a.outcome,reportedAt:now.toISOString()}}});
+  const generated=await tx.content.findUnique({where:{id:data.questionId},select:{origin:true,generationRunId:true}});
+  if(generated?.origin==='generated'&&generated.generationRunId)await retireInTransaction(tx,userId,generated.generationRunId,'Reported invalid assessment question');
   const report=await view(tx,userId,s,now);
   await tx.studySession.update({where:{id:s.id},data:{assessmentResultJson:{...s.assessmentResultJson,summary:report.summary}}});
   return report;

@@ -1,0 +1,21 @@
+import { test,expect } from '@playwright/test';
+test.skip(!process.env.LESSON_EXERCISES_BROWSER_TEST,'Synthetic isolated lesson fixture required');
+test('ungraded source exercise hides answers, commits and resumes; local route guards reject cross-origin writes',async({page})=>{
+ await page.goto('/grammar/exercises');await expect(page.getByRole('heading',{name:'Ungraded lesson exercises'})).toBeVisible();
+ await page.getByRole('button',{name:'Open lesson exercises'}).click();await expect(page.getByText('Synthetic choose?',{exact:true})).toBeVisible();
+ await expect(page.getByText('Verified book answer: 2',{exact:true})).toHaveCount(0);
+ const current=(await(await page.request.get('/api/lesson-exercises')).json()).current;expect(current.questions[0]).not.toHaveProperty('answer');expect(current.questions[0]).not.toHaveProperty('reason');
+ await page.getByRole('radio',{name:'1. First'}).check();await page.getByRole('button',{name:'Commit answer for question 1'}).click();
+ await expect(page.getByText('Verified book answer: 2',{exact:true})).toBeVisible();
+ await expect(page.getByText('Generated draft explanation',{exact:true})).toBeVisible();
+ await expect(page.getByText('Synthetic generated reason: the second option fits.',{exact:true})).toBeVisible();
+ await expect(page.getByText('1. First',{exact:true})).toBeVisible();
+ await expect(page.getByText('2. Second',{exact:true})).toBeVisible();
+ await page.reload();
+ await expect(page.getByText('Verified book answer: 2',{exact:true})).toBeVisible();
+ await expect(page.getByText('1. First',{exact:true})).toBeVisible();
+ await expect(page.getByText('2. Second',{exact:true})).toBeVisible();
+ const resumed=await page.request.get(`/api/lesson-exercises?session=${current.sessionId}`);expect(resumed.ok()).toBe(true);expect((await resumed.json()).questions[0].response).toBe('1');
+ const rejected=await page.request.post('/api/lesson-exercises',{headers:{Origin:'https://example.invalid'},data:{action:'answer',sessionId:current.sessionId,questionId:current.questions[0].id,clientEventId:crypto.randomUUID(),response:'2'}});expect(rejected.status()).toBe(403);
+ await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

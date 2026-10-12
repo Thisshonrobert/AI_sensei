@@ -7,12 +7,15 @@ import { generateDraft } from '../src/lib/server/generation/service.mjs';
 import { createUser,LOCAL_USER_ID } from '../src/lib/server/review/service.mjs';
 import { exportPrompt,importDraft,approveDraft,generationView,retireRun,saveContext,savedContexts,generationPoolCount,generationList } from '../src/lib/server/generation/service.mjs';
 import { startAssessment,assessmentView,beginReading,saveAnswer,submitAssessment } from '../src/lib/server/assessment/service.mjs';
+import * as generation from '../src/lib/server/generation/service.mjs';
+import * as review from '../src/lib/server/review/service.mjs';
 const enabled=!!process.env.GENERATION_TEST_URL;
 const db=enabled?new PrismaClient({datasourceUrl:process.env.GENERATION_TEST_URL,errorFormat:'minimal'}):null;
 test.after(()=>db?.$disconnect());
 async function fixture(local=false,ownerId,meaning='eat',kind='vocabulary'){
  const user=await createUser(db,ownerId||(local?LOCAL_USER_ID:randomUUID())),id=randomUUID(),sourceId=randomUUID(),e=randomUUID();
  const typed=kind==='grammar'?{pattern:'〜もの',patternVariantsJson:[],explanationJa:null,explanationEn:meaning,nuance:null,formationRulesJson:[],usageJson:{}}:{writtenForm:'食べる',reading:'たべる',partOfSpeech:'verb',senseKey:id,meaningEn:meaning,acceptedGlossesJson:[],alternativeFormsJson:[],usageJson:{}};
+ if(local&&kind==='vocabulary')typed.usageJson={kanji_components:[{text:'食',reading:'た',meanings:['eat']}]};
  const fieldOriginsJson=Object.fromEntries(Object.keys(typed).map(k=>[k,e]));
  await db.$transaction(async tx=>{
   await tx.source.create({data:{id:sourceId,title:'Synthetic generation source',sourceType:'book',language:'ja'}});
@@ -25,7 +28,56 @@ async function fixture(local=false,ownerId,meaning='eat',kind='vocabulary'){
  return {user,id};
 }
 const draft=id=>({version:1,kind:'sentence',title:'A meal',japanese:'食べる。',translation:'Eat.',uses:[{itemId:id,start:0,end:3,reading:'たべる',sense:'eat'}],support:[],issues:[],omissions:[],questions:[]});
+test('reading completion is owned, explicit, durable and idempotent without recall or approval',{skip:!enabled},async()=>{
+ assert.equal(typeof generation.completeReading,'function');
+ const f=await fixture(),r=await exportPrompt(db,f.user.id,{purpose:'passage',topic:'Synthetic reading',targetIds:[f.id]});
+ await assert.rejects(()=>generation.completeReading(db,f.user.id,{runId:r.id,revision:1}));
+ const v=await importDraft(db,f.user.id,r.id,{...draft(f.id),kind:'passage',questions:[0,1].map(i=>({prompt:`Synthetic question ${i}`,targetIds:[f.id],options:[{label:'A',text:'Eating'},{label:'B',text:'Sleeping'}],answer:'A',explanation:'Eating is in the passage.',evidence:{start:0,end:3}}))});
+ const before=await db.userItem.findMany({where:{userId:f.user.id}});
+ assert.equal((await generationView(db,f.user.id,r.id)).readingCompletedAt,null);
+ await assert.rejects(()=>generation.completeReading(db,randomUUID(),{runId:r.id,revision:v.revision}));
+ await assert.rejects(()=>generation.completeReading(db,f.user.id,{runId:r.id,revision:99}));
+ const results=await Promise.all(Array.from({length:3},()=>generation.completeReading(db,f.user.id,{runId:r.id,revision:v.revision})));
+ assert.equal(new Set(results.map(x=>x.completedAt)).size,1);
+ assert.equal(await db.studySession.count({where:{userId:f.user.id,status:'completed'}}),1);
+ const completionSession=await db.studySession.findFirst({where:{userId:f.user.id,status:'completed'}});
+ await assert.rejects(()=>assessmentView(db,f.user.id,completionSession.id),e=>e.status===403);
+ assert.equal((await generationView(db,f.user.id,r.id)).readingCompletedAt,results[0].completedAt);
+ assert.deepEqual(await db.userItem.findMany({where:{userId:f.user.id}}),before);
+ assert.equal(await db.reviewLog.count({where:{userId:f.user.id}}),0);
+ assert.equal(await db.attempt.count({where:{userId:f.user.id}}),0);
+ assert.equal((await db.generationRun.findUnique({where:{id:r.id}})).status,'draft');
+ const stats=await review.dashboard(db,f.user.id);
+ assert.equal(stats.activity.readingsTotal,1);assert.equal(stats.activity.reviewsTotal,0);assert.equal(stats.activity.streak,1);
+ const at=new Date();
+ await db.studySession.createMany({data:[
+  {userId:f.user.id,mode:'weekly',status:'completed',endedAt:at,selectionSeed:'synthetic',selectionSnapshotJson:{}},
+  {userId:f.user.id,mode:'weekly',status:'active',selectionSeed:'synthetic',selectionSnapshotJson:{}},
+  {userId:f.user.id,mode:'practice',status:'completed',endedAt:at,selectionSeed:'synthetic',selectionSnapshotJson:{passages:[{id:randomUUID()}]}},
+  {userId:f.user.id,mode:'practice',status:'completed',endedAt:at,selectionSeed:'synthetic',selectionSnapshotJson:{kind:'lesson_exercises'}},
+ ]});
+ await review.syncCards(db,f.user.id);
+ const session=await review.startSession(db,f.user.id,{includeNew:true});
+ let card=(await review.sessionView(db,f.user.id,session.id)).card;
+ await review.introduce(db,f.user.id,session.id,card.id);
+ card=(await review.sessionView(db,f.user.id,session.id)).card;
+ const response={sessionId:session.id,cardId:card.id,stateVersion:card.stateVersion,clientEventId:randomUUID(),answer:{reading:'たべる',meaning:'eat'}};
+ await review.commitResponse(db,f.user.id,response);
+ await review.rate(db,f.user.id,{...response,rating:1,components:{readingCorrect:false,meaningCorrect:false}});
+ const aggregate=await review.dashboard(db,f.user.id);
+ assert.equal(aggregate.activity.readingsTotal,2);assert.equal(aggregate.activity.weeklyTotal,1);assert.equal(aggregate.activity.weeklyThisWeek,1);
+ assert.equal(aggregate.activity.reviewsToday,1);assert.equal(aggregate.activity.reviewsTotal,1);
+});
 const providerDraft=id=>({...draft(id),kind:'passage',uses:[{itemId:id,quote:'食べる',occurrence:0,reading:'たべる',sense:'eat'}],sentences:[{quote:'食べる。',occurrence:0,translation:'Eat.'}],questions:[0,1].map(i=>({prompt:`Meal question ${i}`,targetIds:[id],options:[{label:'A',text:'Eating'},{label:'B',text:'Sleeping'}],answer:'A',explanation:'Eating is in the passage.',evidence:{quote:'食べる',occurrence:0}}))});
+test('dictionary reader retrieval leaves canonical, learner, scheduling and content records unchanged',{skip:!enabled},async()=>{
+ const f=await fixture(),r=await exportPrompt(db,f.user.id,{purpose:'sentence',topic:'Dictionary reference',targetIds:[f.id]});
+ await importDraft(db,f.user.id,r.id,{...draft(f.id),japanese:'食べる。今日は図書館で食べました。'});
+ const snapshot=async()=>({items:await db.item.findMany({orderBy:{id:'asc'}}),vocabulary:await db.vocabulary.findMany({orderBy:{itemId:'asc'}}),learner:await db.userItem.findMany({where:{userId:f.user.id},orderBy:{itemId:'asc'}}),cards:await db.card.findMany({where:{userId:f.user.id}}),attempts:await db.attempt.findMany({where:{userId:f.user.id}}),logs:await db.reviewLog.findMany({where:{userId:f.user.id}}),content:await db.content.findMany({where:{generationRunId:r.id},orderBy:{id:'asc'}})});
+ const before=await snapshot();const v=await generationView(db,f.user.id,r.id);
+ assert.equal(v.reader.revision,v.revision);assert.ok(v.reader.words.some(w=>w.surface==='図書館'&&!w.itemId));assert.ok(v.reader.words.some(w=>w.surface==='食べました'&&w.lemma==='食べる'&&!w.itemId));
+ await generationView(db,f.user.id,r.id);assert.deepEqual(await snapshot(),before);
+ await assert.rejects(()=>saveContext(db,f.user.id,{runId:r.id,itemId:randomUUID(),revision:v.revision,sentenceId:'sentence-0'}));assert.deepEqual(await snapshot(),before);
+});
 test('generation allows ten requests per rolling day and rejects the eleventh',{skip:!enabled},async t=>{
  const f=await fixture(),input={purpose:'passage',topic:'Synthetic quota',targetIds:[f.id]};
  const runs=[];for(let i=0;i<10;i++)runs.push(await exportPrompt(db,f.user.id,input,'gemini'));

@@ -1,136 +1,61 @@
 # AGENTS.md
 
-## Execution requirements
+## Execution Requirements
 
-These requirements summarize the detailed rules below; they do not replace the Master Plan.
+These invariants govern every turn; they cannot be overridden:
 
-1. Agents **MUST** read the relevant sections and amendments of [FINALIZED_PROJECT_PLAN.md](FINALIZED_PROJECT_PLAN.md) before making architectural or feature decisions, and identify the current phase's scope and acceptance gate.
-2. Agents **MUST NOT** implement features outside that approved scope or introduce dependencies without approval.
-3. Agents **MUST NOT** execute or suggest broad staging (including `git add .`) or force pushes. Git mutations remain manual unless the user explicitly authorizes the specific action; preserve unrelated edits.
-4. Agents **MUST** run the actual verification commands and inspect their output before claiming build, lint, typecheck, test, or browser checks passed. Report checks not run as unverified; documentation edits do not establish application phase completion.
-5. Agents **MUST** prefix shell commands with `rtk`, use Bun for package management/scripts and Node for server/database/import execution, and keep credentials, API keys, private book data, and learner history out of command output. See [Tooling & Verification](#tooling--verification) for the existing command conventions.
-6. After completing each phase, agents **MUST** provide the exact scoped `rtk git add -- <path>...` command and a suggested commit subject in the final handoff without waiting for the user to ask. Include implementation/documentation paths, exclusions, actual verification results, and `Graphify required: yes/no` with any integration prerequisite. Providing commands does not authorize executing Git mutations.
+1. **Authority:** [FINALIZED_PROJECT_PLAN.md](FINALIZED_PROJECT_PLAN.md) is the primary specification. Read relevant sections and amendments before making architectural or feature decisions.
+2. **Tooling & Runtimes:**
+   - Prefix shell commands with `rtk` (use `rtk proxy` for commands without an existing filter).
+   - Use Bun for package management and scripts (`packageManager` / `bun.lock`).
+   - Use Node for server runtime, database operations, and import scripts.
+3. **Manual Git Mutations:**
+   - Never execute or suggest broad staging (`git add .`), broad directory staging, or force pushes.
+   - Git commits, pushes, and branch changes remain manual unless explicitly authorized by the user.
+   - At each handoff, provide the exact scoped command: `rtk git add -- <path>...` and a suggested commit subject. Include `Graphify required: yes/no`.
+4. **Verification before Claims:** Run actual verification commands and inspect their output before reporting checks passed. Report unverified checks explicitly.
+5. **Privacy & Secrets:** Keep database credentials, API keys, private book data/PDFs, and learner history out of command and chat output.
+6. **Continuation Prompts:** Every continuation prompt must state the recommended model and reasoning-effort setting for the next task, with a brief rationale. Follow the relevant workflow's model routing, choose only a model/effort supported in the destination chat, and name any limitation if the preferred setting is unavailable.
+
+---
 
 ## Project Overview
 
-Build a private, single-user Japanese JLPT N2 study application. The goal is efficient exam preparation through verified Nihongo no Mori content, manageable recall, timed reading, and external listening—not learning software development.
+Private, single-user Japanese JLPT N2 study application. The focus is trustworthy Nihongo no Mori content, manageable spaced recall (FSRS), timed reading, and external listening—not learning software development. Local Windows use is default; stored reviews work without AI or internet.
 
-**Primary authority:** [FINALIZED_PROJECT_PLAN.md](FINALIZED_PROJECT_PLAN.md), including its targeted amendments. This guide summarizes engineering constraints; it cannot override the Master Plan. The Zapier AGENTS.md was a documentation template only, not a project specification. If implementation exposes a conflict, report the exact plan section and affected behavior before redesigning it.
+---
 
-The approved stack is Next.js, React, TypeScript, Tailwind, PostgreSQL, Prisma, Zod, and server-side `ts-fsrs`. One application, one database, ordinary server modules. Local Windows use is the default; stored reviews must work without AI or internet. See Master Plan §§1–2, 17–19.
+## Context Pointers (Progressive Disclosure)
 
-## Engineering Guide
+Consult these reference documents on demand when working on specific areas of the project:
 
-- Optimize for trustworthy content and returning to study tomorrow. Keep maintenance proportional to a personal study tool.
-- Use simple, readable, testable code; follow existing conventions and avoid unrelated refactoring.
-- Implement one verified vertical slice at a time in the Master Plan's phase order. Do not prebuild later features.
-- Keep database, scheduler, and Japanese analysis on the Node server runtime. Choose route handlers or server actions consistently within each feature; do not duplicate mutations across both.
-- Application data retrieval **MUST** use bounded, explicit records through SQL (including Prisma queries). Application AI is draft-only: it **MUST NOT** write canonical textbook facts, approve content, or update scheduling state. AI-assisted extraction may produce unverified source drafts; it does not establish their correctness or authorize promotion.
-- Preserve source evidence, missing fields, accepted alternatives, and uncertainty. Fluent output is not verification.
-- Check the relevant phase gate and invariant before changing content identity, review transactions, eligibility, or publication.
+### 1. Data Extraction & Enrichment (Active Focus)
+- **PDF Extraction & Enrichment Workflow:** Read [docs/extraction-templates/batch-workflow.md](docs/extraction-templates/batch-workflow.md) before starting any textbook batch.
+  - Keep extracted drafts strictly in git-ignored `private-data/`.
+  - Use installed local JMdict before web lookups (`src/lib/server/generation/dictionary.mjs`).
+  - Use reusable local scripts for validation, assembly, and checkpoints (`scripts/pdf-batch.mjs`, `scripts/enrich-study-batch.mjs`).
+  - Never guess missing readings, answers, or book facts; preserve source uncertainties as null/unresolved.
+  - Stop after at most three new production batches per chat and provide a continuation checkpoint prompt.
+- **Prompts & Schemas:** Consult [docs/extraction-templates/extraction-prompt.md](docs/extraction-templates/extraction-prompt.md), [docs/extraction-templates/enrichment-prompt.md](docs/extraction-templates/enrichment-prompt.md), and [docs/extraction-templates/lesson-answer-reasons-prompt.md](docs/extraction-templates/lesson-answer-reasons-prompt.md).
 
-## Repository Structure
+### 2. Database Population & Imports (Active Focus)
+- **Database Import & Batch Staging:** Read [docs/database-import.md](docs/database-import.md) when staging, sanitizing, or loading extracted batches.
+  - Local PostgreSQL runs via Docker Compose (`compose.yaml`).
+  - Sanitization checks structure and source provenance before loading unreviewed staging records (`ImportBatch`).
+  - Canonical promotion requires explicit human review and approval records.
 
-See [docs/repository-structure.md](docs/repository-structure.md) for current folders and deferred module boundaries.
+### 3. Tooling, Testing & Verification
+- **Test Commands & Verification Matrices:** Read [docs/tooling_Verification.md](docs/tooling_Verification.md) for full commands (`test:review`, `test:assessment`, `test:generation`, browser tests), staging commands, and environment setups.
 
-- `FINALIZED_PROJECT_PLAN.md` — authoritative specification; retain its location and amendments.
-- `src/app/` — Next.js reference/item/source pages, daily dashboard, persistent review and weekly assessment UI; local mutations use feature-specific routes.
-- `src/components/` — shared UI only when actual screens need it.
-- `src/lib/server/` — server modules; begin with `content/` for verified import. Review, assessment, and generation arrive in their respective phases.
-- `prisma/` — staging, canonical provenance, persistent learner recall and assessment/session timing migrations; generation remains deferred.
-- `scripts/` — bounded local import/backup utilities as their phases require them.
-- `tests/` — focused unit, PostgreSQL integration, and study/resume browser checks as behavior exists.
-- `docs/` — engineering guidance, existing illustrative extraction templates, and private-use UI references.
-- `private-data/` — ignored originals, OCR, imports, backups, and existing inspection files; never put these in `public/`.
-- `.local/` — ignored concise progress/handoff notes when needed.
-- `graphify-out/` — optional generated engineering index, absent initially; not part of the application.
+### 4. System Architecture & Invariants
+- **Domain Boundaries & Core Rules:** Read [docs/architecture.md](docs/architecture.md) for the 18 logical records, independent FSRS card states, response-commitment gate, sibling burying rules, and reading aid boundaries.
 
-## Core Architectural Invariants
+### 5. Repository Structure
+- **Folder Boundaries & Module Paths:** Read [docs/repository-structure.md](docs/repository-structure.md) for current layout and deferred boundaries.
 
-The detailed authority is Master Plan §§3–8, 12–15, 19–20. See [docs/architecture.md](docs/architecture.md).
+### 6. Phased Implementation Workflow
+- **Phased Implementation & Acceptance:** Read [docs/implementation-workflow.md](docs/implementation-workflow.md) for phase gates (Phases 1–5 are implemented; future extensions remain gated).
 
-1. Imported, introduced, familiar, and retrievable are distinct. Import creates reference/new-pool records, never implicit learner familiarity or active reviews.
-2. One canonical Item has one matching typed Vocabulary/Kanji/Grammar row. Source relationships preserve edition/page provenance; do not merge vocabulary solely by spelling or English gloss.
-3. Content uses one kind-discriminated table with explicit book/generated/user origin. Source evidence and approved content revisions are immutable; corrections preserve historical prompts and attempts.
-4. One Card measures one stable recall objective. Vocabulary requires **reading plus selected meaning** with one rating/state; either failure means Again. Core kanji meaning and source-backed whole-word contextual reading have separate states. Missing context blocks the reading card. Incidental kanji cards remain opt-in.
-5. Relationships **MUST NOT** propagate ratings. Practice, reading aids, explanations, tests, AI feedback, and dictionary lookups **MUST NOT** update FSRS in V1.
-6. A review atomically writes Attempt, immutable ReviewLog, and Card state. Event IDs are idempotent; stale state versions conflict. Store complete library state/log, configuration, version, and prompt snapshots.
-7. Initial daily activation allowances are five vocabulary, two core-kanji objective cards, one grammar card, and eight total. The implemented Phase 4 extension (Master Plan §8) separates unlimited explicit study recording from a waiting review pool and persisted adjustable activation allowances/extra batches; preserve backlog pauses and sibling separation. Sibling burying changes presentation eligibility, not due dates or another card's state.
-8. Scored tests use approved questions and introduced/learner-enabled baseline targets; unseen N2 is excluded. Selection and timed deadlines survive refresh. Short valid tests beat fabricated quotas.
-9. A complete N5–N3 baseline is optional. Zero baseline rows must work. Untracked supporting language is not automatically unknown or known; explicit unresolved sense/reading/grammar problems require review before approved reuse.
-10. AI is optional, on demand, bounded, and draft-only. Human approval precedes reusable publication; accepted answers/rubrics precede scored/scheduled questions. No paid fallback; generation failure leaves review available.
-11. Reading/dashboard/grammar additions reuse existing records. No per-tap AI, separate reader scheduler, extra comparison tables, or analytics service. Span offsets are revision-bound half-open UTF-16 indices, including valid surrogate boundaries.
-12. Localhost and server-only secrets are defaults. Protect local mutations from cross-origin requests, enforce ownership, and test backup restoration before relying on irreplaceable history. Internet deployment requires one-user authentication/authorization first.
-13. V1 **MUST NOT** introduce microservices, a message broker, LangGraph, autonomous study agents, pgvector/vector or graph databases, a custom SRS, or a custom Japanese parser. Engineering Graphify is an optional index, not a learner-data system.
-
-## Tooling & Verification
-
-Read [docs/tooling_Verification.md](docs/tooling_Verification.md) and [docs/database-import.md](docs/database-import.md). Local PostgreSQL, Prisma/Zod import, reference pages, persistent FSRS recall and Phase 3 personal-release UI/recovery are implemented. The learner accepted Phase 3 and authorized Phase 4 on 8 October 2026; see [docs/phase-3-handoff.md](docs/phase-3-handoff.md) and [docs/phase-4-handoff.md](docs/phase-4-handoff.md). Three real batches were explicitly accepted without PDF comparison and promoted with exact record/hash approvals; source transcription is not independently verified. Deferred real questions still require explicit answer/target/support approval. Do not claim checks passed until their real commands run. Future batches require their own human decisions; acceptance is limited to the existing three batches.
-
-Use Bun as the primary package manager/script runner (`packageManager` and `bun.lock`); retain Node for database/import/server execution. Use `rtk bun run test` for the existing Node suite, not bare `bun test`.
-
-Prefix shell commands with `rtk`, using `rtk proxy` for commands without a suitable filter, as required by the user-provided RTK instructions. Never expose database credentials, API keys, raw books, or learner history in command output.
-
-## Documentation
-
-The learner accepted Phase 4 except for Graphify and approved its flexible-study extension on 8 October 2026. The extension is implemented with automated §18 evidence in [docs/phase-4-extension-handoff.md](docs/phase-4-extension-handoff.md); Graphify awaits integration confirmation. Study starts 10 October; 15 December 2026 is a provisional preparation deadline, not a verified exam date. Real question approval remains separate; Phase 5 is not authorized by this extension.
-
-**Yes, concise documentation is necessary** for source verification, scheduler correctness, phase acceptance, backup recovery, and safe handoffs. It is not a development course. Read [docs/documentation.md](docs/documentation.md) for the document map and update rules. Keep the Master Plan authoritative and avoid copying it into competing specifications.
-
-## Graphify
-
-Read [docs/graphify.md](docs/graphify.md). Optional engineering navigation only; absence must not block studying or implementation. Refresh after a major implemented architectural milestone has been merged/pushed and the user confirms an up-to-date clean source. Do not regenerate for every small change or this documentation scaffold. Exclude secrets, books, OCR, imports, backups, and learner records.
-
-## Skills
-
-- Use relevant planning, debugging, testing, review, and verification skills for engineering work, with scope proportional to the task.
-- Use `ponytail` for simple maintainable implementation and Graphify for existing engineering graph queries when useful.
-- Use frontend design/accessibility skills for actual approved screens, preserving the Master Plan's UI constraints.
-- Use **UI/UX Pro** and **Taste** when available, primarily for frontend/UI/UX. They do not govern backend architecture, change the finalized specification, or authorize functionality redesign. If unavailable, report that briefly and use available frontend/accessibility skills; installation is not a prerequisite.
-- For vocabulary and kanji flashcards, use Quizlet only as a UX reference for card interaction, reveal behavior, study flow, and visual hierarchy. Do not copy its branding, UI, assets, or exact design. Adapt interactions to the approved N2 objectives, response-commitment gate, independent FSRS states, and workload limits.
-- Use token-optimizer only for a requested audit or concrete context problem; no routine full state dump.
-- **Do not require `/teach`, developer lessons, interview exercises, or learner checkpoints.** Product grammar explanation/production practice remains Japanese learning under the Master Plan, separate from software-development teaching.
-- Use only skills/tools actually available. No skill, plugin, or model installation is a prerequisite to the core study loop.
-
-## Tool Roles & Model Routing
-
-These are engineering handoff conventions, not application services or new architectural requirements. The learner selects tools/models; do not assume the Zapier project's names or presets are available here.
-
-- **Planning tool:** examines requirements against the existing Master Plan. Changes require an explicit recorded decision; another planning chat cannot silently supersede it.
-- **Implementation tool (Codex or another selected coding tool):** implements the current approved phase, verifies behavior, and reports paths/results/limitations without compulsory teaching.
-- **Documentation tool (Antigravity when selected):** maintains scoped engineering docs from verified implementation evidence and may handle confirmed Graphify milestones. It does not invent implemented behavior or change curriculum/scheduler decisions.
-- Route complex review transactions, schema integrity, security, and difficult debugging to a stronger reasoning model. Use a lower-cost capable model for bounded documentation or mechanical changes. Keep current user-selected settings by default; model brand/price is not a correctness gate.
-- Do not confuse coding models with the app's optional generation provider: initial practice uses prompt export/manual draft import. Automated free API/local-model options remain subject to Master Plan §§2, 15–16.
-
-### Manual Git and Antigravity Handoff
-
-- Default: the user stages, commits, pushes, merges, switches branches, and pulls. This scaffold adds no automatic phase scripts, PR automation, heartbeat, or direct-to-main push policy.
-- Inspect changes read-only; preserve existing edits. At handoff, list exact paths as `Implementation`, `Documentation`, and `Excluded or uncertain`, plus verification evidence and unresolved issues.
-- At every completed phase, provide an exact `rtk git add -- <path>...` command for the intended bundle and a commit subject in both the phase handoff document and the final response. Do this automatically as part of completion reporting; the user executes the commands unless they explicitly authorize Git mutations. Never suggest `git add .` or broad dirty-directory staging. Include the Master Plan/existing references only if the user intends them in that commit; do not silently absorb previously untracked files. Disclose shared files containing authorized preparation for a later phase rather than silently presenting them as phase-only changes.
-- State `Graphify required: yes/no` under the milestone policy. When yes, wait for confirmation that the phase is integrated and the default branch is clean/up to date before regeneration. Hand off exact generated paths separately.
-- An Antigravity brief identifies the plan sections, exact docs to edit, verified behavior/checks, remaining gaps, and files to exclude. Prepare the brief here; sending it to another chat requires user authorization.
-- Explicit user authorization for a Git action takes precedence over these defaults. Never force push or include unrelated/private files implicitly.
-
-## Token Efficiency & Memory (claude-mem)
-
-- File-first authority: Master Plan, current files, Git diff, and actual verification evidence. Optional `.local/progress.md` is a short resume aid, not a specification or learner database.
-- Read the current phase and affected records rather than the full repository repeatedly. Specify files to read/edit/exclude in handoffs.
-- Use claude-mem only if configured and available. Retrieve a small relevant engineering summary; do not dump history or store private books, credentials, or learner responses there. Its absence cannot block work.
-- Reuse completed work after checking the diff and evidence; do not restart interrupted tasks from chat memory alone.
-
-### Token Budget Guardrails
-
-- Default to one agent for sequential/shared-file work. Delegate only with user authorization or applicable workflow instructions and truly independent scope; no routine parallel orchestration.
-- Execute the approved plan without replanning every task. Escalate concrete contradictions or missing decisions.
-- Keep reports concise; save detailed diagnostics to ignored local files when needed, with secrets redacted.
-- Run focused verification, fix affected failures, and complete the required phase checks. Repeat only when new edits/failures justify it.
-- Report genuine remaining work; do not label partial work complete to save tokens. Stop after the requested scope and handoff.
-
-## Implementation Workflow
-
-1. Read the relevant Master Plan section/amendments, current files, and uncommitted changes. Identify the next phase's acceptance evidence.
-2. Define a bounded file/behavior scope. Preserve existing extraction templates as illustrative interchange formats, not canonical data or finished importer schemas.
-3. Follow phases 1–7 in Master Plan §18: verified content slice → reliable daily recall → usable personal release → cumulative assessment → generated practice → incremental growth → optional extensions.
-4. Implement the smallest working slice and its meaningful checks. Keep absent source data flagged; source approval is a human quality gate.
-5. Verify phase behavior and relevant amendment checks. Record commands/results and distinguish implemented, manually verified, pending, and deferred work.
-6. Update only affected docs, then provide the manual Git/documentation handoff. Suggest next scope/model capability only when useful; do not start the next phase automatically.
+### 7. Documentation & Handoffs
+- **Document Map & Rules:** Read [docs/documentation.md](docs/documentation.md) for document updates and handoff structure.
+- **Graphify Navigation:** Read [docs/graphify.md](docs/graphify.md) for rules on generating the engineering index.

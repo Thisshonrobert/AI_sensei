@@ -3,6 +3,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { configuration, initialState, schedule, effectiveRating, studyDay, nextStudyDay } from './scheduler.mjs';
 import { studyContent } from '../content/study.mjs';
+import { activitySummary,summarizeActivity } from './activity.mjs';
+export { summarizeActivity };
 
 export const LOCAL_USER_ID='00000000-0000-4000-8000-000000000001';
 const limits={vocabulary:5,kanji:2,grammar:1,total:8};
@@ -340,7 +342,7 @@ export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
   progress[kind]={total:await db.item.count({where}),introduced:await db.item.count({where:{...where,userItems:{some:{userId,introducedAt:{not:null}}}}})};
  }
  const user=await db.user.findUnique({where:{id:userId}});
- if(!user)return {progress,studiedToday:0,waitingItems:0,waitingObjectives:0,partialItems:0,blockedItems:0,missingObjectives:0,configuredLimits:limits,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0,total:0},limits,timeBudgetMinutes:30,introductionsPaused:false,sessionId:null};
+ if(!user)return {activity:summarizeActivity([],now),progress,studiedToday:0,waitingItems:0,waitingObjectives:0,partialItems:0,blockedItems:0,missingObjectives:0,configuredLimits:limits,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0,total:0},limits,timeBudgetMinutes:30,introductionsPaused:false,sessionId:null};
  return locked(db,userId,async(tx,u)=>{
   const {budget,dueCount,due,chosen}=await dueSelection(tx,u,now);
   const active=await tx.studySession.findFirst({where:{userId,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'}});
@@ -348,6 +350,6 @@ export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
   const actionableDue=await tx.card.count({where:{userId,status:'active',dueAt:{lte:now},...eligible(now)}});
   const missingGrammar=await tx.item.count({where:{kind:'grammar',status:'approved',cards:{none:{userId,objective:'grammar_cloze',status:{not:'retired'}}}}});
   const missingContext=await tx.item.count({where:{kind:'kanji',status:'approved',sourceEntries:{some:{verificationStatus:'verified',curriculumRole:'core_kanji'}},cards:{none:{userId,objective:'kanji_reading_context',status:{not:'retired'}}}}});
-  return {progress,...await poolSummary(tx,u,now),configuredLimits:u.settingsJson.newCardLimits||limits,reviewCount:view?.card?view.total-view.completed-view.deferred:chosen.length,sessionId:view?.card?active.id:null,sessionStatus:active?.status,due:dueCount,actionableDue,buriedDue:dueCount-actionableDue,deferred:view?.deferred||0,contentGaps:missingGrammar+missingContext,introductionsPaused:dueCount>budget||dueCount>due.length,used:await counts(tx,u,now),limits:effectiveLimits(u,now),timeBudgetMinutes:u.settingsJson.timeBudgetMinutes||30};
+  return {activity:await activitySummary(tx,u,now),progress,...await poolSummary(tx,u,now),configuredLimits:u.settingsJson.newCardLimits||limits,reviewCount:view?.card?view.total-view.completed-view.deferred:chosen.length,sessionId:view?.card?active.id:null,sessionStatus:active?.status,due:dueCount,actionableDue,buriedDue:dueCount-actionableDue,deferred:view?.deferred||0,contentGaps:missingGrammar+missingContext,introductionsPaused:dueCount>budget||dueCount>due.length,used:await counts(tx,u,now),limits:effectiveLimits(u,now),timeBudgetMinutes:u.settingsJson.timeBudgetMinutes||30};
  });
 }

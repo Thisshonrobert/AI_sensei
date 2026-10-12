@@ -10,12 +10,15 @@
   "unreadable_pdf_pages": [],
   "entries": [
     {
+      "source_record_key": "kanji/lesson_01/entry_001",
       "character": "学",
       "meanings": ["study", "learning"],
       "on_readings": ["ガク"],
       "kun_readings": ["まな.ぶ"],
       "stroke_count": 8,
       "radical": null,
+      "mnemonic": null,
+      "component_breakdown": [],
       "jlpt_level": null,
       "chapter": null,
       "source_pdf_pages": [1],
