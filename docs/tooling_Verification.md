@@ -155,7 +155,7 @@ rtk bun run test:browser
 rtk bun run start
 ```
 
-`dev`/`start` bind `127.0.0.1:3000`. Browser checks launch a production server and the installed Microsoft Edge; build first and stop any existing server on port 3000 before testing. PostgreSQL must be running. `start` needs the production build; `dev` does not. There are no web mutation endpoints in this slice.
+`dev` checks ports 3000–3010 and binds to the first one available on `127.0.0.1`; this includes falling back to 3002 when port 3001 cannot be bound. `start` binds `127.0.0.1:3000`. Browser checks launch a production server and the installed Microsoft Edge; build first and stop any existing server on port 3000 before testing. PostgreSQL must be running. `start` needs the production build; `dev` does not. There are no web mutation endpoints in this slice.
 
 Framework setup follows the official [Next.js installation](https://nextjs.org/docs/app/getting-started/installation), [ESLint configuration](https://nextjs.org/docs/app/api-reference/config/eslint) and [Tailwind Next.js guide](https://tailwindcss.com/docs/installation/framework-guides/nextjs). Next.js 16 uses the separate ESLint CLI; build is not a substitute for lint.
 

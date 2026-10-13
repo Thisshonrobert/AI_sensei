@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { itemDetail, itemNeighbors } from '@/lib/server/content/catalog';
 import { parseKind, titles } from '@/lib/server/content/catalog-input';
-import { Citations, ContentBlock, name, object } from '@/components/reference';
+import { ContentBlock, name, object } from '@/components/reference';
 import { ItemFacts } from '@/components/item-facts';
 import { grammarComparisons } from '@/lib/server/content/study.mjs';
 import { db } from '@/lib/server/db';
@@ -28,11 +28,10 @@ export default async function Detail({params}: {params: Promise<{kind: string; i
   return <><Link className="back" href={`/${kind}`}>← {titles[kind]}</Link><EntryNavigation kind={kind} {...neighbors}><h1 lang="ja" className="japanese item-title">{name(item)}</h1></EntryNavigation>
     <ItemFacts item={item}/>
     <MarkStudied itemId={id} initial={completion}/>
-    <details className="source-disclosure"><summary>Sources &amp; evidence</summary><p className="status">Content revision {item.revision}</p><Citations citations={item.sourceEntries}/></details>
     <Comparisons comparisons={comparisons}/>
     {contexts.length>0&&<section><h2>Saved sentence contexts</h2>{contexts.map(c=><article className="study-example" key={`${c.contentId}-${c.sentenceId}`}><p className="field-label">Generated · human-reviewed revision {c.revision}</p><p className="japanese sentence" lang="ja">{c.japanese}</p>{c.translation&&<details><summary>Sentence translation</summary><p>{c.translation}</p></details>}</article>)}</section>}
     <section><h2>Examples &amp; study notes</h2>{references.length ? references.map(({content,reading,supplement}) => <ContentBlock key={content.id} content={content} targetMeanings={item.kanji?.meaningsJson} meaningSupplement={supplement} displayReading={reading} showEvidence={false}/>) : <p className="empty">No examples supplied.</p>}{item.contentLinks.length===120 && <p className="notice">Showing the first 120 linked references. Browse sources for more.</p>}</section>
-    {questions.length>0 && <details><summary>Reference questions · {questions.length}</summary>{questions.map(({content}) => <ContentBlock key={content.id} content={content}/>)}</details>}
+    {questions.length>0 && <details><summary>Reference questions · {questions.length}</summary>{questions.map(({content}) => <ContentBlock key={content.id} content={content} showEvidence={false}/>)}</details>}
     <Dictionary itemId={id}/>
   </>;
 }

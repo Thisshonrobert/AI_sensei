@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "bun@1.2.20",
   "scripts": {
-    "dev": "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1",
+    "dev": "node scripts/dev-server.mjs",
     "build": "node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next start --hostname 127.0.0.1",
     "lint": "node node_modules/eslint/bin/eslint.js src tests/browser next.config.ts playwright.config.ts",
