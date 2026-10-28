@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: ai-sensei
+    runtime: node
+    plan: free
+    buildCommand: bun install --frozen-lockfile && node node_modules/prisma/build/index.js generate && node node_modules/next/dist/bin/next build
+    startCommand: node node_modules/next/dist/bin/next start --hostname 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATABASE_URL
+        sync: false
+      - key: POSTGRES_DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      - key: GEMINI_MODELS
+        sync: false
+      - key: GEMINI_FREE_TIER_CONFIRMED
+        value: "true"
+      - key: APP_PASSWORD
+        sync: false
