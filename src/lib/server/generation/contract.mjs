@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 const id=z.string().uuid(),text=z.string().trim().min(1).max(4000);
@@ -22,10 +24,16 @@ export const draftSchema=z.object({
  if(new Set(p.omissions.map(o=>o.itemId)).size!==p.omissions.length)c.addIssue({code:'custom',message:'Duplicate omission'});
 });
 export const parseDraft=value=>draftSchema.parse(value);
+// Waller N5–N3 kanji (amendment A7): a generation/furigana scope, not a certified JLPT level or familiarity claim.
+export const N5_N3_KANJI=Object.values(JSON.parse(readFileSync(join(process.cwd(),'src','lib','server','generation','kanji-n5-n3.json'),'utf8')).levels).join('');
+// The single source of truth for the study-scope kanji rule: supplied target/support kanji plus N5–N3 kanji.
+export function allowedKanji(scope){
+ const forms=[...scope.targets,...scope.support].flatMap(t=>[t.writtenForm,...(t.variants||[])]).filter(v=>typeof v==='string');
+ return [...new Set([...(forms.join('').match(/\p{Script=Han}/gu)||[]),...N5_N3_KANJI])];
+}
 // A conservative study-scope check, not a JLPT classifier or a familiarity claim.
 export function unprovidedKanji(draft,scope){
- const forms=[...scope.targets,...scope.support].flatMap(t=>[t.writtenForm,...(t.variants||[])]).filter(v=>typeof v==='string');
- const allowed=new Set(forms.join('').match(/\p{Script=Han}/gu)||[]);
+ const allowed=new Set(allowedKanji(scope));
  const text=[draft.japanese,draft.title,...draft.questions.flatMap(q=>[q.prompt,...q.options.map(o=>o.text),q.explanation])].join('');
  return [...new Set(text.match(/\p{Script=Han}/gu)||[])].filter(glyph=>!allowed.has(glyph));
 }
@@ -55,22 +63,43 @@ export const draftJsonSchema=object({version:{type:'integer',enum:[1]},kind:{typ
 
 // Models quote exact text; the server owns positional arithmetic and validates the result.
 const anchor={quote:{type:'string',minLength:1},occurrence:integer};
+const nonEmpty={type:'string',minLength:1};
+// The provider schema mirrors only cheap Zod minimums; large maxItems/maxLength bounds
+// exceed Google's guided-decoding state limit and are rejected as INVALID_ARGUMENT.
 export const providerDraftJsonSchema={...draftJsonSchema,properties:{...draftJsonSchema.properties,
- uses:array(object({...anchor,itemId:string,reading:string,sense:string})),
+ title:nonEmpty,japanese:nonEmpty,translation:nonEmpty,
+ uses:array(object({...anchor,itemId:nonEmpty,reading:nonEmpty,sense:nonEmpty})),
+ omissions:array(object({itemId:nonEmpty,reason:nonEmpty})),
  support:array(object({...anchor,classification:{type:'string',enum:['untracked_support','punctuation','configured_support']},explanation:string})),
- issues:array(object({...anchor,code:{type:'string',enum:['learner_reported_unknown','ambiguous_sense','suspicious_reading','unresolved_grammar','unreadable_analysis']},reason:string})),
- sentences:array(object({...anchor,translation:string})),
- questions:array(object({prompt:string,targetIds:array(string),options:array(object({label:string,text:string})),answer:string,explanation:string,evidence:object(anchor)})),
+ issues:array(object({...anchor,code:{type:'string',enum:['learner_reported_unknown','ambiguous_sense','suspicious_reading','unresolved_grammar','unreadable_analysis']},reason:nonEmpty})),
+ sentences:{type:'array',minItems:1,items:object({...anchor,translation:nonEmpty})},
+ questions:{type:'array',minItems:2,items:object({prompt:nonEmpty,targetIds:{type:'array',items:string,minItems:1},options:{type:'array',items:object({label:nonEmpty,text:nonEmpty}),minItems:2},answer:nonEmpty,explanation:nonEmpty,evidence:object(anchor)})},
 }};
-export function normalizeProviderDraft(value){
+// Large target pools make bookkeeping slips likely. Repair annotations only, never text:
+// drop uses that fail local checks or name unknown IDs, disclose every unused target as omitted and untag questions.
+export function reconcileDispositions(draft,scope,invalidUses=[]){
+ const ids=new Set(scope.targets.map(t=>t.id)),bad=new Set(invalidUses.map(u=>`${u.itemId}:${u.start}:${u.end}`));
+ const uses=draft.uses.filter(u=>ids.has(u.itemId)&&!bad.has(`${u.itemId}:${u.start}:${u.end}`)),used=new Set(uses.map(u=>u.itemId)),kept=new Set();
+ const omissions=draft.omissions.filter(o=>ids.has(o.itemId)&&!used.has(o.itemId)&&!kept.has(o.itemId)&&kept.add(o.itemId));
+ const added=scope.targets.filter(t=>!used.has(t.id)&&!kept.has(t.id)).map(t=>({itemId:t.id,reason:'Not demonstrated in the passage; recorded as omitted'}));
+ // A question keeps only demonstrated target tags; one left with none is retagged with the demonstrated
+ // targets nearest its evidence span (overlapping ones first), and still fails validation if nothing is demonstrated.
+ const gap=(u,e)=>Math.max(0,u.start-e.end,e.start-u.end);
+ let untagged=0;const questions=draft.questions.map(q=>{let kept=q.targetIds.filter(id=>used.has(id));if(kept.length===q.targetIds.length)return q;if(!kept.length&&uses.length){const near=Math.min(...uses.map(u=>gap(u,q.evidence)));kept=[...new Set(uses.filter(u=>gap(u,q.evidence)===near).map(u=>u.itemId))];}if(!kept.length)return q;untagged+=q.targetIds.length;return {...q,targetIds:kept};});
+ return {draft:{...draft,uses,omissions:[...omissions,...added],questions},repaired:draft.uses.length-uses.length+draft.omissions.length-omissions.length+added.length+untagged};
+}
+export function normalizeProviderDraft(value,onMissingUse){
  const anchored=z.object({quote:z.string().min(1).max(2000),occurrence:z.number().int().min(0).max(240)});
  const japanese=z.string().min(1).max(2000).parse(value.japanese);
  function resolve(entry){
   const {quote,occurrence}=anchored.parse(entry);let start=-1,cursor=0;
-  for(let n=0;n<=occurrence;n++){start=japanese.indexOf(quote,cursor);if(start<0)throw new Error('Quoted annotation was not found in the final Japanese text');cursor=start+quote.length;}
+  for(let n=0;n<=occurrence;n++){start=japanese.indexOf(quote,cursor);if(start<0)throw new Error(`Quoted annotation was not found in the final Japanese text: ${JSON.stringify(quote.slice(0,40))}. Add that exact text to japanese, or remove this annotation and record an omission for its target`);cursor=start+quote.length;}
   const {quote:ignoredQuote,occurrence:ignoredOccurrence,...fields}=entry;void ignoredQuote;void ignoredOccurrence;
   return {...fields,start,end:start+quote.length};
  }
- if(value.kind==='passage'&&[...new Intl.Segmenter('ja',{granularity:'sentence'}).segment(japanese)].filter(s=>s.segment.trim()).length>10)throw new Error('A passage must contain at most ten sentences');
- return parseDraft({...value,uses:value.uses.map(resolve),support:value.support.map(resolve),issues:value.issues.map(resolve),sentences:value.sentences.map(resolve),questions:value.questions.map(q=>({...q,evidence:resolve(q.evidence)}))});
+ function use(entry){
+  try{return resolve(entry);}catch(error){if(onMissingUse&&/Quoted annotation was not found/.test(error.message)){onMissingUse(entry.itemId);return null;}throw error;}
+ }
+ if(value.kind==='passage'){const count=[...new Intl.Segmenter('ja',{granularity:'sentence'}).segment(japanese)].filter(s=>s.segment.trim()).length;if(count<10||count>15)throw new Error(`A passage must contain 10–15 sentences; this one has ${count}`);}
+ return parseDraft({...value,uses:value.uses.map(use).filter(Boolean),support:value.support.map(resolve),issues:value.issues.map(resolve),sentences:value.sentences.map(resolve),questions:value.questions.map(q=>({...q,evidence:resolve(q.evidence)}))});
 }

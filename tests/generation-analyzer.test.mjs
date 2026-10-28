@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeDraft } from '../src/lib/server/generation/analyzer.mjs';
+import { analyzeDraft, kanaHints } from '../src/lib/server/generation/analyzer.mjs';
 const id='10000000-0000-4000-8000-000000000001';
 const word={id,kind:'vocabulary',revision:1,writtenForm:'食べる',reading:'たべる',meaning:'eat',variants:[]};
 const value=(japanese,uses=[])=>({japanese,uses,issues:[],support:[]});
@@ -24,4 +24,7 @@ test('longest approved phrase resolves before split tokens and emoji preserve UT
 test('ambiguous senses and mismatched declared readings stay explicit problems',async()=>{
  const r=await analyzeDraft(value('食べる。',[{itemId:id,start:0,end:3,reading:'のむ',sense:'eat'}]),{targets:[word],support:[{...word,id:'other',meaning:'different sense'}]});
  assert.ok(r.problems.some(p=>p.code==='ambiguous_sense'));assert.ok(r.problems.some(p=>p.code==='suspicious_reading'));
+});
+test('kanji retry hints name whole words with hiragana candidates',async()=>{
+ assert.deepEqual(await kanaHints(['新しい会員と時間を決めました。'],['新','員','時']),['新しい→あたらしい','会員→かいいん','時間→じかん']);
 });

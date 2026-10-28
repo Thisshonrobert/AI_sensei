@@ -4,7 +4,7 @@ import { db } from '@/lib/server/db';
 import { LOCAL_USER_ID,createUser } from '@/lib/server/review/service.mjs';
 import { GenerationError,generationView,generationList,generationTargets,exportPrompt,importDraft,approveDraft,retireRun,hideRun,generateDraft,saveContext,completeReading,MAX_APPROVAL_BODY_CHARS } from '@/lib/server/generation/service.mjs';
 import { providerConfiguration } from '@/lib/server/generation/gemini.mjs';
-import { prepareReader } from '@/lib/server/generation/reader.mjs';
+import { prepareReader,knownKanji } from '@/lib/server/generation/reader.mjs';
 import type { Run } from '@/lib/server/generation/service.mjs';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -20,7 +20,7 @@ const input=z.discriminatedUnion('action',[
  z.object({action:z.literal('hide'),runId:id}).strict(),
 ]);
 const send=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});
-const sendRun=async(value:Run)=>send(value.draft?{...value,reader:await prepareReader(value)}:value);
+const sendRun=async(value:Run)=>send(value.draft?{...value,reader:{...await prepareReader(value),knownKanji:await knownKanji(db,LOCAL_USER_ID)}}:value);
 const local=(r:NextRequest)=>['127.0.0.1','localhost'].includes(r.nextUrl.hostname)&&/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(r.headers.get('host')||'');
 function failure(e:unknown){return e instanceof GenerationError?send({error:e.message},e.status):e instanceof z.ZodError?send({error:'Invalid generation request'},400):send({error:'Practice could not be saved. Stored reviews remain available.'},500);}
 export async function GET(r:NextRequest){

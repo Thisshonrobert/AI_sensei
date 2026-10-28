@@ -63,3 +63,29 @@ test('reinstalling identical dictionary content publishes a fresh edition and ne
  await installDictionary(entries,metadata,'synthetic licence',root);const second=JSON.parse(await readFile(join(root,'current.json'),'utf8'));assert.notEqual(second.edition,first.edition);assert.equal(await readFile(join(root,first.edition,'entries.jsonl'),'utf8'),original);assert.equal(await readFile(join(root,second.edition,'entries.jsonl'),'utf8'),original);
  const refs=JSON.parse(await readFile(join(root,second.edition,'index.json'),'utf8'));const bytes=Buffer.from(original),[offset,length]=refs['食べる'][0];assert.equal(JSON.parse(bytes.subarray(offset,offset+length).toString()).id,'1');
 });
+test('every token is a reader word; particles are not content words',async()=>{
+ const r=await prepareReader(run('ここで食べる。'),{lookup});
+ assert.deepEqual(r.words.map(w=>[w.surface,w.content]),[['ここ',true],['で',false],['食べる',true]]);
+});
+test('inflected words carry a local Satori-style sentence form label',async()=>{
+ const r=await prepareReader(run('雨が降っていた。本を読みました。食べられない。行ってしまった。降ったら、高くなかった。行こう。'),{lookup});
+ const form=surface=>r.words.find(w=>w.surface===surface)?.form;
+ assert.equal(form('降っていた'),'Progressive | past');assert.equal(form('読みました'),'Polite | past');
+ assert.equal(form('食べられない'),'Passive / potential | negative');assert.equal(form('行ってしまった'),'Completed | past');
+ assert.equal(form('降ったら'),'Conditional');assert.equal(form('高くなかった'),'Negative | past');assert.equal(form('行こう'),'Volitional');
+ assert.equal(form('雨'),null);
+});
+test('N5–N3 inventory and studied kanji form the known set for knowledge-based furigana',async()=>{
+ const { N5_N3_KANJI,knownKanji }=await import('../src/lib/server/generation/reader.mjs');
+ assert.equal(N5_N3_KANJI.length,619);assert.ok(N5_N3_KANJI.includes('食'));assert.ok(!N5_N3_KANJI.includes('鬱'));
+ assert.deepEqual([...'一十百円日月火水木金土本人今年時分半午前後上下中外学校生先何見行来出入読書話言食飲買会休長高新古大小身的無可坊畑'].filter(c=>!N5_N3_KANJI.includes(c)),[]);
+ const db={kanji:{findMany:async()=>[{glyph:'鬱'},{glyph:'食'}]}};
+ const known=await knownKanji(db,'user');assert.ok(known.includes('鬱'));assert.equal(known.length,620);
+});
+test('JMdict phrases spanning several words attach as expression entries to each member word',async()=>{
+ const scream={id:'x',form:'悲鳴を上げる',readings:['ひめいをあげる'],senses:[{meanings:['to scream'],pos:['Ichidan verb'],readings:[],notes:[]}]};
+ const greeting={id:'g',form:'今日は',readings:['こんにちは'],senses:[{meanings:['hello'],pos:['expression'],readings:[],notes:[]}]};
+ const r=await prepareReader(run('悲鳴を上げた。今日は休む。'),{lookup:async form=>form==='悲鳴を上げる'?[scream]:form==='今日は'?[greeting]:lookup(form)});
+ for(const surface of ['悲鳴','を','上げた'])assert.equal(r.words.find(w=>w.surface===surface).expressions?.[0].form,'悲鳴を上げる');
+ assert.equal(r.words.find(w=>w.surface==='今日').expressions,undefined);
+});

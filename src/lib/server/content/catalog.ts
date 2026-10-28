@@ -2,6 +2,7 @@ import 'server-only';
 import { Prisma } from '@prisma/client';
 import { db } from '../db';
 import { type Kind, pageInput } from './catalog-input';
+import { resolveKanjiMeanings } from './kanji-meanings.mjs';
 
 export const sourceSelect = { id: true, title: true, edition: true, sourceType: true, language: true } satisfies Prisma.SourceSelect;
 // Only the linked record is included, never a book, batch or raw source payload.
@@ -14,6 +15,22 @@ export const contentSelect = { id: true, revision: true, successor: { select: { 
 export type CatalogItem = Prisma.ItemGetPayload<{ select: typeof itemSelect }>;
 export type Citation = Prisma.SourceEntryGetPayload<{ select: typeof citationSelect }>;
 export type CatalogContent = Prisma.ContentGetPayload<{ select: typeof contentSelect }>;
+// Browse-list meaning resolution needs no citations or revision history.
+export const kanjiMeaningSelect = { id: true, kind: true, origin: true, status: true, revision: true, createdAt: true, successor: { select: { id: true } }, payloadJson: true } satisfies Prisma.ContentSelect;
+
+// Approved English kanji and vocabulary glosses are field supplements; the book wording stays untouched.
+export async function listKanjiMeanings(items: readonly { id: string; kanji: { meaningsJson: Prisma.JsonValue } | null; vocabulary?: { meaningEn: string } | null }[]) {
+  const book = new Map(items.map(item => [item.id, item.kanji?.meaningsJson ?? item.vocabulary?.meaningEn ?? null]));
+  const ids = [...book.keys()];
+  if (!ids.length) return new Map<string, string>();
+  const rows = await db.content.findMany({
+    where: { kind: 'explanation', status: 'approved', successor: null, payloadJson: { path: ['kind'], equals: 'dictionaryFieldSupplement' }, items: { some: { itemId: { in: ids } } } },
+    select: { ...kanjiMeaningSelect, items: { where: { itemId: { in: ids } }, select: { itemId: true } } },
+  });
+  const byItem = new Map<string, typeof rows>();
+  for (const row of rows) for (const link of row.items) byItem.set(link.itemId, [...(byItem.get(link.itemId) ?? []), row]);
+  return new Map([...byItem].map(([itemId, contents]) => [itemId, resolveKanjiMeanings(contents, book.get(itemId)).text]));
+}
 
 export async function listItems(kind: Kind, input: {page?: string; query?: string}) {
   const paging = pageInput(input);

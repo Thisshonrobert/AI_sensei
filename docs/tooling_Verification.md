@@ -1,5 +1,89 @@
 # Tooling and verification
 
+## Sprint daily recall and match practice — 26 October 2026
+
+Amendment A6. Commands run in this implementation (Node runs server and tests; `bun run build` must precede the browser runner because Playwright serves `next start`):
+
+```powershell
+rtk proxy node --test tests/review-selection.test.mjs tests/match-pairs.test.mjs
+rtk bun run test
+rtk bun run test:review
+rtk proxy npx tsc --noEmit
+rtk bun run lint
+rtk bun run build
+rtk bun run test:review:browser
+```
+
+- Baseline before the change: `bun run test` 126 pass / 0 fail (62 skipped); `test:review` 26/26.
+- After: selection unit tests 6/6; match unit tests 4/4; `bun run test` 136 pass / 0 fail (73 skipped, PostgreSQL-gated); `test:review` 39/39 (after the final-review fixes); typecheck and lint clean; production build succeeded; `test:review:browser` 9/9 (desktop and 375 px, including the match round).
+- Real database, read-only: `scripts/retire-kanji-reading-cards.mjs` dry run found 138 `kanji_reading_context` cards; the first daily session would select 97 vocabulary (96 first recalls + 1 due) and 28 kanji (27 + 1). A local backup was written to ignored `private-data/backups/pre-sprint-recall-20261026-b` (21 tables); a first backup attempt failed and its partial folder is not a usable backup.
+- Applied with the learner's approval: `retire-kanji-reading-cards.mjs --apply` retired 138 cards. A re-run found 0, and the review-log count was unchanged.
+
+## Daily recall timing and paired-choice recall — 18 October 2026
+
+Scope: Master Plan §§8–10 and 18–19, amendment **A4**, and [architecture.md](architecture.md#recall-correctness). No Prisma migration, dependency or new service was added; choices and timing metadata use existing `Attempt` JSON and `StudySession` columns. The source plan is [docs/plans/2026-10-18-daily-recall-choice-mode.md](plans/2026-10-18-daily-recall-choice-mode.md). These results do not verify PDFs, source facts or the real learner's vocabulary quality.
+
+### Automated checks (run in this implementation; Node executes server/tests)
+
+```powershell
+rtk proxy node --test --test-isolation=none tests/review-timing.test.mjs
+rtk proxy node --test --test-isolation=none tests/review-choices.test.mjs tests/review-scheduler.test.mjs tests/review-timing.test.mjs
+rtk bun run test:review
+rtk bun run lint
+rtk bun run typecheck
+rtk bun run build
+rtk bun run test:review:browser
+```
+
+Results:
+
+- Timing unit tests: **2 passed** (fresh segment counts, abandoned segment contributes 0, saved time is retained and clamped, paused time never accrues).
+- Choice/scheduler/timing unit tests together: **12 passed**. Option construction is deterministic; the vocabulary set pairs the real reading and meaning, isolates `same_reading`, `same_meaning` and `unrelated`, and returns `null` when only one candidate exists. A core-kanji meaning set pairs an English meaning with a hiragana reading and never mixes a bare kanji reading with whole-word readings. `normalizeReading` re-exported from `service.mjs` still satisfies `tests/review-scheduler.test.mjs`.
+- `test:review` (isolated synthetic PostgreSQL created by the runner): **25 passed, 0 failed**. This includes the new stale-session timing test and the two choice tests (four options, hidden answer snapshot, server grading, idempotent retry, `Easy` capped to `Good`, wrong component forces Again, stale fingerprint rejected).
+- `lint` and `typecheck`: clean (Next.js 16.3.8 route type generation plus `tsc --noEmit`).
+- Production build: succeeded.
+- `test:review:browser`: **3 synthetic integration tests + 8 Playwright tests passed**. The review flow now studies a new vocabulary card, hides the answer, commits a choice, verifies "Both components correct", reloads, stops/resumes, rates `Good`, then deliberately commits a wrong option on the next card and verifies only `Again` remains. Keyboard `1` selection and the 375 px layout are covered. Screenshots: `.local/review-desktop.png` and `.local/review-mobile.png` (ignored).
+
+Notes on the test environment:
+
+- Unit tests were executed with `--test-isolation=none` because this session's Windows sandbox denies the child-process pipes `node --test` uses by default; the same test bodies run under the repository's normal `bun run test`.
+- The plan's sample stale-session test credited a 20-minute open segment, but the same plan sets `IDLE_GAP_MS` to 15 minutes and classifies a 16-minute pause as idle. The tests use sub-threshold segments (10 minutes) and add a second stop/resume segment, preserving the existing 25-minute budget assertion. The production threshold is unchanged at 15 minutes.
+- The browser runner selects three synthetic integration tests as its fixture. Those fixtures now import distinct meanings (`time`, `incident`, `errand`, `plan`) instead of the shared `test sense N`; the shared meanings are deliberately rejected as ambiguous same-reading decoys, so without this the browser pool could not exercise the choice UI. This changes only synthetic test data. Direct `Vocabulary.meaningEn` updates are blocked by the immutable-revision trigger.
+
+### Read-only real-database check
+
+```powershell
+rtk proxy node scripts/repair-session-timing.mjs
+```
+
+Dry run output: `{"open":1,"stale":1,"apply":false}`. `--apply` was **not** run; the open session remains resumable and will start a fresh segment when the client resumes it.
+
+With a temporary production server on `127.0.0.1:3200` (stopped after the check), a read-only `GET /api/review` against the real local database returned, without printing learner content: `status=active`, `elapsedActiveMs=0`, `idleTooLong=true`, `timeBudgetReached=false`, four `vocab_pair` choices, and **no** `correctChoiceId`, `tier`, `answerSpecJson` or committed `answer` in the unrevealed payload. Before the fix the same session reported thousands of active minutes and a forced budget-reached state. No review event was committed to the real library.
+
+A second read-only script (`.local`, not tracked) rebuilt the core-kanji meaning set for every card in the real library through the production builder. Result: **75 of 85 cards produce a bilingual set**, **0 produce a language-mixed set**, and **10 fall back to typed entry** (Japanese-only source gloss with no matching dictionary entry). Of the 75, 56 pair the meaning with a reading from a source example word and 19 use the kanji's own on/kun reading for all four options; no set mixes the two kinds, so the correct option is never the odd one out.
+
+### Manual inspection
+
+`.local/review-desktop.png` and `.local/review-mobile.png` were inspected: Japanese text is legible, four options stack at 375 px with no horizontal overflow, no option is marked or ordered as correct before commitment, the post-commit view names the selected pair, and `Easy` is disabled for a correct choice while a wrong choice disables `Hard`, `Good` and `Easy`.
+
+### Recall-before-study follow-up — 19 October 2026
+
+Amendment A5 removes the forced study-first gate for new cards. A new card renders the same four-option (or typed) recall form as an active card; the first `commitResponse` performs the introduction transaction, then reveal and rating follow. The stored study reference is a collapsed **Read this card** control after reveal. No migration or dependency was added.
+
+```powershell
+rtk bun run lint
+rtk bun run typecheck
+rtk bun run test:review
+rtk bun run build
+rtk bun run test:review:browser
+```
+
+- `lint` and `typecheck`: clean.
+- Production build: succeeded.
+- `test:review`: **26 passed, 0 failed**. New case: a `new` card exposes four choices with no answer snapshot, and its first commit sets `status='active'`, `introducedAt`, `dueAt`, the `UserItem` first-study record, writes the attempt and produces one ReviewLog. The 8-card allowance test now activates through `commitResponse` instead of `introduce`, so the caps and sibling burying are verified on the new path.
+- `test:review:browser`: **3 synthetic integration tests + 8 Playwright tests passed**. The review test verifies that a new card shows no `Study first` heading, no `Study this new card` button and no answer before commitment; four choices appear immediately; the study reference is collapsed and opens on demand; the reveal, reload, stop/resume and rating persist; a deliberately wrong option leaves only `Again`. Keyboard `1` and the 375 px layout remain covered.
+- Playwright serves `next start`, so the production build must run before the browser suite; an earlier stale build still showed the removed study-first button.
+
 ## Phase 5 contextual practice — 8 October 2026
 
 The N3 recall-passage clarification sets surrounding language to N3 or simpler while retaining supplied studied N2 targets. New provider generation requires kana for supporting words whose kanji are absent from supplied eligible study forms; the server checks passage/question glyphs and requests correction within existing retry limits. This is a conservative study-scope rule, not a certified JLPT inventory or a claim of familiarity.

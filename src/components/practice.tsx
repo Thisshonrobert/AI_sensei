@@ -16,7 +16,7 @@ export function Practice({poolCount,initialRuns,provider}:{poolCount:number;init
  return <section className="practice" aria-label="Contextual practice" aria-busy={busy}>
   {error&&<div role="alert" className="practice-alert"><p>{error}</p><button type="button" className="secondary" onClick={()=>setError('')}>Dismiss</button></div>}
   <form className="practice-compose" onSubmit={e=>{e.preventDefault();resetApproval();void mutate({action:'generate',purpose:'passage',topic,review:modelReview});}}>
-   <h2>A passage from your studies</h2><p className="muted">One connected passage of up to 10 sentences, blending your latest study week with earlier material.</p>
+   <h2>A passage from your studies</h2><p className="muted">One connected passage of 10–15 sentences, blending your latest study week, studied grammar and kanji with earlier material.</p>
    {!poolCount&&<p className="notice">Mark an approved item as studied to begin.</p>}
    <label htmlFor="practice-topic">What would you like to read about?</label><input id="practice-topic" value={topic} maxLength={200} required onChange={e=>setTopic(e.target.value)}/>
    <div className="practice-compose-actions"><label className="practice-check"><input type="checkbox" checked={modelReview} onChange={e=>setModelReview(e.target.checked)}/>Include an AI language review</label><button disabled={busy||!poolCount||!provider.enabled}>{busy?'Generating…':'Generate'}</button></div>

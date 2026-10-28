@@ -6,6 +6,16 @@ export async function readingTokens(text){
  const engine=await tokenizer();let cursor=0;
  return engine.tokenize(text).map(token=>{const start=text.indexOf(token.surface_form,cursor);if(start<cursor)throw new Error('Unreconciled tokenizer span');cursor=start+token.surface_form.length;return {...token,start,end:cursor};});
 }
+// Retry hints only: kuromoji whole-word readings for words holding disallowed kanji. The model still rewrites the text.
+// Contextual kana for words containing disallowed kanji, longest surface first so replacements do not split words.
+export async function kanaReplacements(texts,disallowed){
+ const glyphs=new Set(disallowed),hints=new Map();
+ for(const text of texts)for(const t of await readingTokens(text))if([...t.surface_form].some(c=>glyphs.has(c))&&t.reading&&!hints.has(t.surface_form))hints.set(t.surface_form,t.reading.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)));
+ return [...hints].sort((a,b)=>b[0].length-a[0].length);
+}
+export async function kanaHints(texts,disallowed,limit=40){
+ return (await kanaReplacements(texts,disallowed)).slice(0,limit).map(([word,reading])=>`${word}→${reading}`);
+}
 const kana=s=>s.normalize('NFC').replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/\s/g,'');
 const forms=item=>[item.writtenForm,...(item.variants||[]).filter(v=>typeof v==='string')].filter(Boolean);
 // Versioned elementary support preference, not a claim about contextual correctness.

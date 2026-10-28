@@ -1,25 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/server/db';
-import { LOCAL_USER_ID, ReviewError, createUser, syncCards, startSession, sessionView, introduce, commitResponse, rate, stopSession, updateBudget, markUnfamiliar, markStudied, updateActivationLimits, addActivationBatch } from '@/lib/server/review/service.mjs';
+import { LOCAL_USER_ID, ReviewError, createUser, syncCards, startSession, sessionView, resumeSession, introduce, commitResponse, rate, stopSession, updateBudget, markUnfamiliar, markStudied, updateCaps, currentSession } from '@/lib/server/review/service.mjs';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 const id=z.string().uuid();
-const answer=z.object({reading:z.string().max(500).optional(),meaning:z.string().max(2000).optional(),response:z.string().max(2000).optional()}).strict();
+const answer=z.object({
+ reading:z.string().max(500).optional(),
+ meaning:z.string().max(2000).optional(),
+ response:z.string().max(2000).optional(),
+ choiceId:z.string().min(8).max(40).optional(),
+ choiceFingerprint:z.string().regex(/^[a-f0-9]{8,32}$/).optional(),
+}).strict();
 const response={sessionId:id,cardId:id,stateVersion:z.number().int().nonnegative(),clientEventId:id,answer};
-const allowances=z.object({vocabulary:z.number().int().min(0).max(100),kanji:z.number().int().min(0).max(100),grammar:z.number().int().min(0).max(100),total:z.number().int().min(0).max(300)}).strict();
+const caps=z.object({vocabulary:z.number().int().min(0).max(300),kanji:z.number().int().min(0).max(300),grammar:z.number().int().min(0).max(300)}).strict();
 const input=z.discriminatedUnion('action',[
- z.object({action:z.literal('start'),includeNew:z.boolean()}).strict(),
+ z.object({action:z.literal('start'),reviewMore:z.boolean().optional()}).strict(),
  z.object({action:z.literal('introduce'),sessionId:id,cardId:id}).strict(),
  z.object({action:z.literal('respond'),...response}).strict(),
- z.object({action:z.literal('rate'),...response,rating:z.number().int().min(1).max(4),components:z.record(z.boolean())}).strict(),
+ z.object({action:z.literal('rate'),...response,rating:z.number().int().min(1).max(4),components:z.record(z.boolean()).optional()}).strict(),
+ z.object({action:z.literal('resume'),sessionId:id}).strict(),
  z.object({action:z.literal('stop'),sessionId:id}).strict(),
  z.object({action:z.literal('budget'),minutes:z.number().int().min(5).max(60)}).strict(),
  z.object({action:z.literal('attention'),itemId:id}).strict(),
  z.object({action:z.literal('studied'),itemId:id}).strict(),
- z.object({action:z.literal('activationLimits'),values:allowances}).strict(),
- z.object({action:z.literal('extraBatch'),clientEventId:id,values:allowances}).strict(),
+ z.object({action:z.literal('caps'),values:caps}).strict(),
 ]);
 function send(value:unknown,status=200){return NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});}
 function local(request:NextRequest){return ['127.0.0.1','localhost'].includes(request.nextUrl.hostname)&&/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(request.headers.get('host')||'');}
@@ -32,8 +38,8 @@ function failure(error:unknown){
 export async function GET(request:NextRequest){
  if(!local(request)||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Local access only'},403);
  try {
-  const session=await db.studySession.findFirst({where:{userId:LOCAL_USER_ID,mode:'daily',status:{in:['active','paused']}},orderBy:{startedAt:'desc'},select:{id:true}});
-  return send(session?await sessionView(db,LOCAL_USER_ID,session.id):null);
+  const id=await currentSession(db,LOCAL_USER_ID);
+  return send(id?await sessionView(db,LOCAL_USER_ID,id):null);
  }catch(error){return failure(error);}
 }
 export async function POST(request:NextRequest){
@@ -48,15 +54,16 @@ export async function POST(request:NextRequest){
   if(data.action==='start'){
    await createUser(db);
    const pool=await syncCards(db,LOCAL_USER_ID);
-   const session=await startSession(db,LOCAL_USER_ID,{includeNew:data.includeNew});
+   const session=await startSession(db,LOCAL_USER_ID,{reviewMore:data.reviewMore});
+   if(!session.id)return send({empty:true});
    return send({...await sessionView(db,LOCAL_USER_ID,session.id),contentGaps:pool.gaps.length});
   }
   if(data.action==='introduce')return send(await introduce(db,LOCAL_USER_ID,data.sessionId,data.cardId));
   if(data.action==='budget'){await createUser(db);return send(await updateBudget(db,LOCAL_USER_ID,data.minutes));}
   if(data.action==='attention'){await createUser(db);return send(await markUnfamiliar(db,LOCAL_USER_ID,data.itemId));}
   if(data.action==='studied'){await createUser(db);return send(await markStudied(db,LOCAL_USER_ID,data.itemId));}
-  if(data.action==='activationLimits'){await createUser(db);return send(await updateActivationLimits(db,LOCAL_USER_ID,data.values));}
-  if(data.action==='extraBatch'){await createUser(db);return send(await addActivationBatch(db,LOCAL_USER_ID,data.clientEventId,data.values));}
+  if(data.action==='caps'){await createUser(db);return send(await updateCaps(db,LOCAL_USER_ID,data.values));}
+  if(data.action==='resume')return send(await resumeSession(db,LOCAL_USER_ID,data.sessionId));
   if(data.action==='stop')return send(await stopSession(db,LOCAL_USER_ID,data.sessionId));
   const {action,...payload}=data;
   if(action==='respond')return send(await commitResponse(db,LOCAL_USER_ID,payload));

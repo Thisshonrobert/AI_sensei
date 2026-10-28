@@ -15,7 +15,8 @@ These invariants govern every turn; they cannot be overridden:
    - At each handoff, provide the exact scoped command: `rtk git add -- <path>...` and a suggested commit subject. Include `Graphify required: yes/no`.
 4. **Verification before Claims:** Run actual verification commands and inspect their output before reporting checks passed. Report unverified checks explicitly.
 5. **Privacy & Secrets:** Keep database credentials, API keys, private book data/PDFs, and learner history out of command and chat output.
-6. **Continuation Prompts:** Every continuation prompt must state the recommended model and reasoning-effort setting for the next task, with a brief rationale. Follow the relevant workflow's model routing, choose only a model/effort supported in the destination chat, and name any limitation if the preferred setting is unavailable.
+6. **Implementation Agent:** Implementation is done by Claude Code only; do not assume Codex or other coding tools. Apply the `karpathy-guidelines` skill whenever writing, reviewing, or refactoring code: surface assumptions, keep it simple, make surgical changes, and define verifiable success criteria.
+7. **Continuation Prompts:** Every continuation prompt must state the recommended model and reasoning-effort setting for the next task, with a brief rationale. Follow the relevant workflow's model routing, choose only a model/effort supported in the destination chat, and name any limitation if the preferred setting is unavailable.
 
 ---
 

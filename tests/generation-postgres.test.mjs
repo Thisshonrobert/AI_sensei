@@ -68,7 +68,7 @@ test('reading completion is owned, explicit, durable and idempotent without reca
  assert.equal(aggregate.activity.readingsTotal,2);assert.equal(aggregate.activity.weeklyTotal,1);assert.equal(aggregate.activity.weeklyThisWeek,1);
  assert.equal(aggregate.activity.reviewsToday,1);assert.equal(aggregate.activity.reviewsTotal,1);
 });
-const providerDraft=id=>({...draft(id),kind:'passage',uses:[{itemId:id,quote:'食べる',occurrence:0,reading:'たべる',sense:'eat'}],sentences:[{quote:'食べる。',occurrence:0,translation:'Eat.'}],questions:[0,1].map(i=>({prompt:`Meal question ${i}`,targetIds:[id],options:[{label:'A',text:'Eating'},{label:'B',text:'Sleeping'}],answer:'A',explanation:'Eating is in the passage.',evidence:{quote:'食べる',occurrence:0}}))});
+const providerDraft=id=>({...draft(id),kind:'passage',japanese:'食べる。'.repeat(10),uses:[{itemId:id,quote:'食べる',occurrence:0,reading:'たべる',sense:'eat'}],sentences:[{quote:'食べる。',occurrence:0,translation:'Eat.'}],questions:[0,1].map(i=>({prompt:`Meal question ${i}`,targetIds:[id],options:[{label:'A',text:'Eating'},{label:'B',text:'Sleeping'}],answer:'A',explanation:'Eating is in the passage.',evidence:{quote:'食べる',occurrence:0}}))});
 test('dictionary reader retrieval leaves canonical, learner, scheduling and content records unchanged',{skip:!enabled},async()=>{
  const f=await fixture(),r=await exportPrompt(db,f.user.id,{purpose:'sentence',topic:'Dictionary reference',targetIds:[f.id]});
  await importDraft(db,f.user.id,r.id,{...draft(f.id),japanese:'食べる。今日は図書館で食べました。'});
@@ -78,11 +78,14 @@ test('dictionary reader retrieval leaves canonical, learner, scheduling and cont
  await generationView(db,f.user.id,r.id);assert.deepEqual(await snapshot(),before);
  await assert.rejects(()=>saveContext(db,f.user.id,{runId:r.id,itemId:randomUUID(),revision:v.revision,sentenceId:'sentence-0'}));assert.deepEqual(await snapshot(),before);
 });
-test('generation allows ten requests per rolling day and rejects the eleventh',{skip:!enabled},async t=>{
+test('generation allows ten non-failed requests per rolling day and rejects the eleventh',{skip:!enabled},async t=>{
  const f=await fixture(),input={purpose:'passage',topic:'Synthetic quota',targetIds:[f.id]};
  const runs=[];for(let i=0;i<10;i++)runs.push(await exportPrompt(db,f.user.id,input,'gemini'));
  await assert.rejects(()=>exportPrompt(db,f.user.id,input,'gemini'),e=>e.status===429&&/Ten generation requests/.test(e.message));
  assert.equal(await db.generationRun.count({where:{userId:f.user.id,provider:'gemini'}}),10);
+ await db.generationRun.update({where:{id:runs[0].id},data:{status:'failed'}});
+ assert.ok((await exportPrompt(db,f.user.id,input,'gemini')).id);
+ await assert.rejects(()=>exportPrompt(db,f.user.id,input,'gemini'),e=>e.status===429);
  const later=Date.now()+25*3600000;t.mock.method(Date,'now',()=>later);
  assert.ok((await exportPrompt(db,f.user.id,input,'gemini')).id);
 });
@@ -104,10 +107,13 @@ test('automatic practice uses the entire eligible pool with a bounded sentence t
 test('Gemini coordinator bounds corrections, retains AI review as draft and stops quota failures',{skip:!enabled},async()=>{
  const f=await fixture(),prior=Object.fromEntries(['GEMINI_API_KEY','GEMINI_MODEL','GEMINI_FREE_TIER_CONFIRMED'].map(k=>[k,process.env[k]]));
  Object.assign(process.env,{GEMINI_API_KEY:'synthetic-key',GEMINI_MODEL:'gemini-3.1-flash-lite',GEMINI_FREE_TIER_CONFIRMED:'true'});
- let calls=0,quota=false;const server=createServer(async(req,res)=>{
-  for await(const chunk of req){void chunk;}calls++;
+ let calls=0,generates=0,quota=false,annotate='valid';const server=createServer(async(req,res)=>{
+  let body='';for await(const chunk of req)body+=chunk;calls++;
   if(quota){res.writeHead(429);res.end('{}');return;}
-  const output=calls===1?{invalid:true}:calls===2?{...providerDraft(f.id),japanese:'食べる。政治。'}:calls===3?providerDraft(f.id):{verdict:'acceptable_for_ungraded_practice',summary:'Synthetic language review',findings:[]};
+  const kind=body.includes('Annotate this Japanese')?'annotate':body.includes('Review this proposed')?'review':'generate';
+  const output=kind==='review'?{verdict:'acceptable_for_ungraded_practice',summary:'Synthetic language review',findings:[]}
+   :kind==='annotate'?(annotate==='valid'?{glosses:[],grammarNotes:[{quote:'食べる。',occurrence:0,pattern:'plain form',explanation:'Dictionary form ending a sentence.'}],sentenceNotes:[{sentence:1,literal:'Eat.'}]}:{glosses:'malformed'})
+   :++generates===1?{invalid:true}:{...providerDraft(f.id),japanese:'たべる。'.repeat(10)+'審査。',uses:[{itemId:f.id,quote:'食べる',occurrence:0,reading:'たべる',sense:'eat'}]};
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(output)}]}}]}));
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -115,9 +121,16 @@ test('Gemini coordinator bounds corrections, retains AI review as draft and stop
   const options={endpoint:`http://127.0.0.1:${server.address().port}`},input={purpose:'passage',topic:'Meal',targetIds:[f.id],review:true};
   const result=await generateDraft(db,f.user.id,input,options);
   assert.equal(calls,4);assert.equal(result.status,'draft');assert.equal(result.report.providerReport.scoredEligible,false);
-  assert.equal(result.report.providerReport.failures.length,2);assert.equal(result.report.providerReport.failures[1][0].code,'unprovided_kanji');assert.equal(result.report.providerReport.modelReview.verdict,'acceptable_for_ungraded_practice');
+  assert.equal(result.report.providerReport.failures.length,1);assert.deepEqual(result.report.providerReport.repairs.map(r=>r.code).sort(),['stray_kanji_written_in_kana','target_kana_restored_to_written_form']);assert.ok(result.draft.japanese.startsWith('食べる。'));assert.match(result.draft.japanese,/しんさ。$/);assert.equal(result.report.providerReport.modelReview.verdict,'acceptable_for_ungraded_practice');
   assert.equal(await db.content.count({where:{generationRunId:result.id,status:'approved'}}),0);
-  quota=true;await assert.rejects(()=>generateDraft(db,f.user.id,input,options),e=>e.status===429);assert.equal(calls,5);
+  assert.deepEqual(result.report.providerReport.calls.map(c=>c.purpose),['generate','generate','review','annotate']);
+  assert.equal(result.report.annotation.revision,1);assert.equal(result.report.annotation.failure,undefined);
+  const reader=(await generationView(db,f.user.id,result.id)).reader;
+  assert.deepEqual(reader.grammarNotes.map(n=>[n.start,n.end,n.pattern]),[[0,4,'plain form']]);assert.deepEqual(reader.sentenceNotes,[{sentenceId:'sentence-0',literal:'Eat.'}]);
+  annotate='malformed';const fallback=await generateDraft(db,f.user.id,input,options);
+  assert.equal(calls,7);assert.equal(fallback.status,'draft');assert.equal(fallback.report.annotation.failure,'malformed_annotation');
+  assert.equal((await generationView(db,f.user.id,fallback.id)).reader.grammarNotes,undefined);
+  quota=true;await assert.rejects(()=>generateDraft(db,f.user.id,input,options),e=>e.status===429);assert.equal(calls,8);
   assert.equal(await db.generationRun.count({where:{userId:f.user.id,status:'failed'}}),1);
   assert.ok((await generationList(db,f.user.id)).every(r=>r.status!=='failed'&&r.status!=='exported'));
   assert.equal(await db.card.count({where:{userId:f.user.id}}),0);
@@ -133,12 +146,16 @@ test('a recent 85-item study week is included with older revision, without chang
  assert.ok(r.prompt.length<=40000);
  assert.ok(recent.every(item=>r.scope.targets.some(t=>t.id===item.itemId)));
  assert.ok(old.every(id=>r.scope.targets.some(t=>t.id===id)));
- assert.match(r.prompt,/1–10 connected sentences/);
+ assert.match(r.prompt,/10–15 connected sentences/);
+ assert.match(r.prompt,/Use each supplied grammar target/);
  assert.match(r.prompt,/one continuous paragraph/);
  assert.match(r.prompt,/same topic, characters and situation/);
  assert.match(r.prompt,/N3-level sentence structure/);
  assert.match(r.prompt,/Avoid new N2\/N1 vocabulary/);
- assert.match(r.prompt,/write other supporting words in kana/);
+ assert.match(r.prompt,/The only kanji characters allowed anywhere in your output/);
+ assert.match(r.prompt,/FINAL RULE/);
+ assert.ok(r.prompt.indexOf('FINAL RULE')>r.prompt.indexOf('\nDATA\n'));
+ assert.doesNotMatch(r.prompt,/write other supporting words in kana/);
  assert.doesNotMatch(r.prompt,/for private N2 practice/);
  assert.doesNotMatch(r.prompt,/Use newline-separated sentences/);
  assert.deepEqual(await db.userItem.findMany({where:{userId:f.user.id,itemId:{in:recent.map(i=>i.itemId)}},orderBy:{itemId:'asc'},select:{itemId:true,introducedAt:true}}),recent);

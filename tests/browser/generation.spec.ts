@@ -37,12 +37,16 @@ test('passage practice survives reload, keeps failures as alerts and protects pu
  await page.goto('/practice');await page.getByRole('button',{name:/Synthetic reading/}).click();
  const passage=page.locator('.practice-reader p.reading-passage');
  await expect(passage).toHaveCount(1);
- expect(await passage.evaluate(node=>{const copy=node.cloneNode(true) as HTMLElement;copy.querySelectorAll('rt').forEach(rt=>rt.remove());return copy.textContent;})).toMatch(/食べた後は休む。\s*それから帰る。/);
+ expect(await passage.evaluate(node=>{const copy=node.cloneNode(true) as HTMLElement;copy.querySelectorAll('rt,.reader-note').forEach(node=>node.remove());return copy.textContent;})).toMatch(/食べた後は休む。\s*それから帰る。/);
  await expect(passage).toHaveCSS('white-space','normal');
- await expect(passage.getByRole('button',{name:/Sentence help/})).toHaveCount(0);
- await expect(page.getByRole('button',{name:'Sentence help · 1',exact:true})).not.toBeVisible();
+ // Each sentence ends with its own notes button; meanings stay hidden until opened.
+ await expect(passage.getByRole('button',{name:/^Sentence meaning \d+$/})).toHaveCount(3);
+ await expect(passage.getByRole('note')).toHaveCount(0);
  expect((await (await page.request.get(`/api/generation?run=${id}`)).json()).report.analyzerStatus).toBe('ready');
  const word=page.getByRole('button',{name:'Word help: 食べる',exact:true}),ruby=word.locator('rt');
+ // Default furigana follows knowledge: 食 is in the N5–N3 inventory, so no ruby is rendered.
+ await expect(page.getByLabel('Furigana')).toHaveValue('known');await expect(ruby).toHaveCount(0);
+ await page.getByLabel('Furigana').selectOption('request');
  await expect(ruby).toHaveCSS('visibility','hidden');
  await word.hover();
  await expect(ruby).toHaveCSS('visibility','visible');
@@ -85,9 +89,9 @@ test('passage practice survives reload, keeps failures as alerts and protects pu
  await page.locator('.publication-review').scrollIntoViewIfNeeded();
  await page.screenshot({path:'.local/practice-polished-mobile.png',fullPage:true});
  await page.setViewportSize({width:1280,height:900});
- await page.locator('.reader-sentence-help > summary').click();
- await page.getByRole('button',{name:'Sentence help · 1',exact:true}).click();
- await expect(page.getByText('Eat.',{exact:false}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Sentence meaning 1',exact:true}).click();
+ await expect(passage.getByRole('note')).toContainText('Eat.');
+ await expect(page.getByRole('button',{name:'Sentence meaning 1',exact:true})).toHaveAttribute('aria-expanded','true');
  await page.getByLabel('Word or grammar help').selectOption('0');
  await expect(page.getByRole('complementary',{name:'Contextual word help'})).toBeFocused();
  await page.keyboard.press('Escape');
@@ -138,6 +142,8 @@ test('non-target dictionary words use the shared keyboard/mobile popup without s
  await page.reload();await page.getByRole('button',{name:/Synthetic dictionary reading/}).click();
  const passage=page.locator('.practice-reader p.reading-passage'),today=passage.getByRole('button',{name:'Word help: 今日',exact:true}),library=passage.getByRole('button',{name:'Word help: 図書館',exact:true}),ate=passage.getByRole('button',{name:'Word help: 食べました',exact:true});
  await expect(today).toBeVisible();await expect(library).toBeVisible();await expect(ate).toBeVisible();
+ // 今日 holds only known kanji, so knowledge mode renders no ruby; the on-request checks below use that mode explicitly.
+ await expect(today.locator('rt')).toHaveCount(0);await page.getByLabel('Furigana').selectOption('request');
  let requests=0;page.on('request',request=>{if(request.url().includes('/api/'))requests++;});
  await passage.getByRole('button',{name:'Word help: 食べる',exact:true}).focus();await page.keyboard.press('ArrowRight');await expect(today).toBeFocused();await expect(today.locator('rt')).toHaveCSS('visibility','visible');await expect(today).toHaveCSS('border-bottom-color','rgb(190, 224, 241)');
   await page.keyboard.press('Enter');const help=page.getByRole('complementary',{name:'Contextual word help'});await expect(help).toBeFocused();await expect(help).toContainText('Multiple readings or entries');await expect(help).toContainText('contextual answer unverified');await expect(help.getByRole('button',{name:'Add to studylist'})).toHaveCount(0);await expect(help.getByRole('button',{name:'Mark unfamiliar'})).toHaveCount(0);await expect(help.getByLabel('Takoboto word or phrase')).toHaveValue('今日');
@@ -147,6 +153,28 @@ test('non-target dictionary words use the shared keyboard/mobile popup without s
  await page.screenshot({path:'.local/reader-dictionary-mobile.png'});await help.getByRole('button',{name:'Close word help'}).click();await expect(library).toBeFocused();
  await page.setViewportSize({width:1280,height:900});await today.click();await page.screenshot({path:'.local/reader-dictionary-desktop.png'});await page.keyboard.press('Escape');expect(requests).toBe(0);
  const after=await (await page.request.get(`/api/generation?run=${r.id}`)).json();expect(after.draft).toEqual(initial.draft);expect(after.revision).toBe(initial.revision);await expect(page.getByRole('link',{name:'EDRDG licence',exact:true})).toBeVisible();
+});
+test('annotate-call glosses, grammar notes and sentence notes appear as unverified aids',async({page})=>{
+ await page.goto('/practice');const headers={Origin:new URL(page.url()).origin};
+ const exported=await page.request.post('/api/generation',{headers,data:{action:'export',purpose:'passage',topic:'Synthetic annotated reading'}});expect(exported.ok()).toBe(true);
+ const r=await exported.json(),itemId=r.scope.targets[0].id,japanese='食べる。今日は図書館で食べました。';
+ const draft={version:1,kind:'passage',title:'Annotated reading',japanese,translation:'Synthetic annotation fixture.',uses:[{itemId,start:0,end:3,reading:'たべる',sense:'eat'}],support:[],issues:[],omissions:[],questions:[0,1].map(i=>({prompt:`Annotation question ${i}`,targetIds:[itemId],options:[{label:'A',text:'Eating'},{label:'B',text:'Sleeping'}],answer:'A',explanation:'Eating is in the passage.',evidence:{start:0,end:3}}))};
+ expect((await page.request.post('/api/generation',{headers,data:{action:'import',runId:r.id,draft,modelId:'synthetic'}})).ok()).toBe(true);
+ // Manual imports make no annotate call, so the stored annotation shape is injected into the reader response.
+ await page.route('**/api/generation?run=*',async route=>{
+  const response=await route.fetch(),run=await response.json(),at=(s:string)=>run.reader.words.find((w:{surface:string})=>w.surface===s);
+  at('図書館').gloss={lemma:'図書館',reading:'としょかん',sense:'library',pos:'noun',source:'dictionary'};at('今日').gloss={lemma:'今日',reading:'きょう',sense:'these days',pos:'noun',source:'ai'};
+  const start=japanese.indexOf('食べました');run.reader.grammarNotes=[{start,end:start+5,pattern:'〜ました',explanation:'Polite past.'}];run.reader.sentenceNotes=[{sentenceId:'sentence-1',literal:'Today I ate at the library.'}];
+  await route.fulfill({response,json:run});
+ });
+ await page.reload();await page.getByRole('button',{name:/Synthetic annotated reading/}).click();
+ const passage=page.locator('.practice-reader p.reading-passage'),help=page.getByRole('complementary',{name:'Contextual word help'});
+ await passage.getByRole('button',{name:'Word help: 図書館',exact:true}).click();
+ await expect(help.locator('[data-gloss]')).toContainText('dictionary sense chosen for this context');await expect(help.locator('[data-gloss]')).toContainText('library');await expect(help.getByText('All dictionary candidates')).toBeVisible();await page.keyboard.press('Escape');
+ await passage.getByRole('button',{name:'Word help: 今日',exact:true}).click();await expect(help.locator('[data-gloss]')).toContainText('AI sense, not in dictionary');await expect(help.locator('[data-gloss]')).toContainText('these days');await page.keyboard.press('Escape');
+ const ate=passage.getByRole('button',{name:'Word help: 食べました',exact:true});await expect(ate).toHaveClass(/reader-grammar/);await ate.click();
+ await expect(help.locator('[data-grammar-note]')).toContainText('AI note, unverified');await expect(help.locator('[data-grammar-note]')).toContainText('Polite past.');await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Sentence meaning 2'}).click();const note=page.getByRole('note');await expect(note).toContainText('Today I ate at the library.');await expect(note).toContainText('AI note, unverified');
 });
 });
 test('large reviewed passages cross the former request limit without bypassing dispositions',async({page})=>{

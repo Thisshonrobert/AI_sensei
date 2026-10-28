@@ -11,9 +11,9 @@ export function text(value: Prisma.JsonValue | undefined) {
   return typeof value === 'string' ? value : '';
 }
 export function name(item: CatalogItem) { return item.vocabulary?.writtenForm || item.kanji?.glyph || item.grammar?.pattern || 'Missing title'; }
-export function summary(item: CatalogItem) { return item.vocabulary?.meaningEn || text(item.kanji?.meaningsJson) || item.grammar?.explanationJa || 'Not supplied'; }
-export function ItemLink({item}: {item: CatalogItem}) {
-  return <Link data-item-link href={`/${item.kind}/${item.id}`} className="entry-link"><span lang="ja" className="japanese">{name(item)}</span><span>{item.vocabulary?.reading && <span lang="ja" className="reading">{item.vocabulary.reading} · </span>}{summary(item)}</span></Link>;
+export function summary(item: CatalogItem, meaning?: string) { return meaning || item.vocabulary?.meaningEn || text(item.kanji?.meaningsJson) || item.grammar?.explanationJa || 'Not supplied'; }
+export function ItemLink({item, meaning}: {item: CatalogItem; meaning?: string}) {
+  return <Link data-item-link href={`/${item.kind}/${item.id}`} className="entry-link"><span lang="ja" className="japanese">{name(item)}</span><span>{item.vocabulary?.reading && <span lang="ja" className="reading">{item.vocabulary.reading} · </span>}{summary(item, meaning)}</span></Link>;
 }
 export function Origin({origin, dictionary = false}: {origin: string; dictionary?: boolean}) {
   if(dictionary)return null;
@@ -63,7 +63,7 @@ export function ContentBlock({content,targetMeanings,meaningSupplement,displayRe
     {p.translation && <p>{text(p.translation)}</p>}
     {['dictionaryKanjiReference','generatedKanjiMnemonic'].includes(text(p.kind)) && <KanjiMnemonic payload={p} targetMeanings={targetMeanings}/>}
     {showEvidence && p.kind === 'vocabularyComponentAid' && <p>Supplementary component readings and meanings, checked against dictionary references. These are study aids; the textbook fields remain separate.</p>}
-    {meaningSupplement && <div data-example-meaning><Origin origin={meaningSupplement.origin} dictionary={meaningSupplement.sourceEntries.some(c=>c.source.sourceType==='dictionary')}/>{object(meaningSupplement.payloadJson).addedBy === 'AI' && <span className="badge generated" data-ai-addition>Added by AI</span>}{!p.translation && !text(p.meanings) && <p>{text(object(meaningSupplement.payloadJson).selectedMeanings)}</p>}{showEvidence && text(object(meaningSupplement.payloadJson).acceptedLimitations) && <p className="notice" data-ai-limitations>AI addition accepted by you. Source meaning or reading not independently verified: {text(object(meaningSupplement.payloadJson).acceptedLimitations)}</p>}{showEvidence && <details><summary>Meaning evidence</summary><Citations citations={meaningSupplement.sourceEntries}/></details>}</div>}
+    {meaningSupplement && <div data-example-meaning><Origin origin={meaningSupplement.origin} dictionary={meaningSupplement.sourceEntries.some(c=>c.source.sourceType==='dictionary')}/>{object(meaningSupplement.payloadJson).addedBy === 'AI' && <span className="badge generated" data-ai-addition>Added by AI</span>}{!p.translation && !text(p.meanings) && <p>{text(object(meaningSupplement.payloadJson).selectedMeanings) || text(object(meaningSupplement.payloadJson).translation)}</p>}{showEvidence && text(object(meaningSupplement.payloadJson).acceptedLimitations) && <p className="notice" data-ai-limitations>AI addition accepted by you. Source meaning or reading not independently verified: {text(object(meaningSupplement.payloadJson).acceptedLimitations)}</p>}{showEvidence && <details><summary>Meaning evidence</summary><Citations citations={meaningSupplement.sourceEntries}/></details>}</div>}
     {content.kind === 'sentence' && !p.translation && !text(p.meanings) && !meaningSupplement && <p className="muted">Translation / meaning not supplied by book.</p>}
     {(p.meanings || p.selectedMeanings) && <p>{text(p.meanings || p.selectedMeanings)}</p>}
     {Array.isArray(p.options) && <ol>{p.options.map((option, i) => <li key={i} lang="ja">{text(object(option).label)}. {text(object(option).text)}</li>)}</ol>}
@@ -75,7 +75,7 @@ export function ContentBlock({content,targetMeanings,meaningSupplement,displayRe
 }
 export function Pagination({path, page, count, query = ''}: {path: string; page: number; count: number; query?: string}) {
   const url = (p: number) => `${path}?${new URLSearchParams({ page: String(p), ...(query ? { query } : {}) })}`;
-  return <nav className="pagination" aria-label="Pagination">{page > 1 && <Link href={url(page - 1)}>← Previous</Link>}<span>Page {page} · {count} records</span>{page * 50 < count && <Link href={url(page + 1)}>Next →</Link>}</nav>;
+  return <nav className="pagination" aria-label="Pagination">{page > 1 && <><Link href={url(page - 1)}>← Previous</Link><Link className="page-arrow prev" href={url(page - 1)} aria-label="Previous page">‹</Link></>}<span>Page {page} · {count} records</span>{page * 50 < count && <><Link href={url(page + 1)}>Next →</Link><Link className="page-arrow next" href={url(page + 1)} aria-label="Next page">›</Link></>}</nav>;
 }
 export function Fact({label, value, origins, citations}: {label: string; value: string; origins?: string[]; citations?: Citation[]}) {
   const evidence = citations?.filter(c => origins?.includes(c.id)) || [];

@@ -38,7 +38,12 @@ if(!process.exitCode){
   }
   if(result.status===0&&process.argv.includes('--browser')){
    const seed=new PrismaClient({datasourceUrl:base.toString(),errorFormat:'minimal'});
-   try{await createUser(seed);const user=await seed.user.findUnique({where:{id:LOCAL_USER_ID}});await seed.user.update({where:{id:LOCAL_USER_ID},data:{settingsJson:{...user.settingsJson,newCardLimits:{vocabulary:5,kanji:0,grammar:0,total:8}}}});await syncCards(seed,LOCAL_USER_ID);}finally{await seed.$disconnect();}
+   try{
+    await createUser(seed);await syncCards(seed,LOCAL_USER_ID);
+    // Daily recall draws only on studied items: mark the synthetic vocabulary studied, oldest first.
+    const cards=await seed.card.findMany({where:{userId:LOCAL_USER_ID,objective:'vocab_reading_meaning'},select:{itemId:true},orderBy:{createdAt:'asc'}});
+    await seed.userItem.createMany({data:cards.map((c,i)=>({userId:LOCAL_USER_ID,itemId:c.itemId,familiarity:'introduced',introducedAt:new Date(Date.now()-(cards.length-i)*60000)})),skipDuplicates:true});
+   }finally{await seed.$disconnect();}
    env.REVIEW_BROWSER_TEST='1';
    env.PLAYWRIGHT_PORT='3100';
    const browser=run('node_modules/@playwright/test/cli.js',['test','tests/browser/review.spec.ts','tests/browser/browse.spec.ts',...(process.argv.includes('--browse-only')?['--grep=read-only flashcards']:[])]);

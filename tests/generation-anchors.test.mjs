@@ -8,9 +8,9 @@ test('practice keeps supplied study kanji and requires kana for incidental kanji
  assert.equal(typeof unprovidedKanji,'function');
  const scope={targets:[{writtenForm:'健康',variants:[]}],support:[{writtenForm:'僕',variants:['私']}]};
  assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。私もげんきです。'},scope),[]);
- assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。政治と経済。政治。'},scope),['政','治','経','済']);
- assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。',title:'政治のはなし'},scope),['政','治']);
- assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。',questions:[{prompt:'政治は？',options:[{text:'経済'}],explanation:'外交'}]},scope),['政','治','経','済','外','交']);
+ assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。審査と履歴。審査。'},scope),['審','査','履','歴']);
+ assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。',title:'審査のはなし'},scope),['審','査']);
+ assert.deepEqual(unprovidedKanji({...output(),japanese:'僕は健康です。',questions:[{prompt:'審査は？',options:[{text:'履歴'}],explanation:'弁護'}]},scope),['審','査','履','歴','弁','護']);
  assert.deepEqual(unprovidedKanji({...output(),japanese:'😀𠮷',questions:[]},scope),['𠮷']);
 });
 test('provider anchors resolve repeated words and UTF-16 positions without model arithmetic',()=>{
@@ -24,9 +24,11 @@ test('missing or ambiguous anchors cannot silently fabricate positions',()=>{
  assert.throws(()=>normalizeProviderDraft({...output(),uses:[{...output().uses[0],occurrence:10}]}));
  assert.throws(()=>normalizeProviderDraft({...output(),uses:[{...output().uses[0],quote:'\uD83D',occurrence:0}]}));
 });
-test('provider passages accept ten sentences in one paragraph and reject eleven',()=>{
+test('provider passages accept 10–15 sentences in one paragraph and reject shorter or longer',()=>{
  const passage=count=>({...output(),kind:'passage',japanese:'僕です。'.repeat(count),uses:[{...output().uses[0],quote:'僕',occurrence:0}],sentences:[],questions:[0,1].map(i=>({prompt:`Who? ${i}`,targetIds:[id],options:[{label:'A',text:'Me'},{label:'B',text:'Someone else'}],answer:'A',explanation:'The narrator speaks.',evidence:{quote:'僕',occurrence:0}}))});
  assert.equal(normalizeProviderDraft(passage(10)).japanese,'僕です。'.repeat(10));
- assert.throws(()=>normalizeProviderDraft(passage(11)),/ten sentences/);
- assert.throws(()=>normalizeProviderDraft({...passage(11),japanese:Array(11).fill('僕です。').join('\n')}),/ten sentences/);
+ assert.equal(normalizeProviderDraft(passage(15)).japanese,'僕です。'.repeat(15));
+ assert.throws(()=>normalizeProviderDraft(passage(9)),/10–15 sentences/);
+ assert.throws(()=>normalizeProviderDraft(passage(16)),/10–15 sentences/);
+ assert.throws(()=>normalizeProviderDraft({...passage(16),japanese:Array(16).fill('僕です。').join('\n')}),/10–15 sentences/);
 });
