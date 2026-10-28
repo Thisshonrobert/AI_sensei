@@ -20,6 +20,6 @@ services:
       - key: GEMINI_MODELS
         sync: false
       - key: GEMINI_FREE_TIER_CONFIRMED
-        value: "true"
+        sync: false
       - key: APP_PASSWORD
         sync: false
