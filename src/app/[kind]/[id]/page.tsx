@@ -8,6 +8,7 @@ import { grammarComparisons } from '@/lib/server/content/study.mjs';
 import { db } from '@/lib/server/db';
 import { Comparisons } from '@/components/study-content';
 import { Dictionary } from '@/components/dictionary';
+import { resolveKanjiMeanings } from '@/lib/server/content/kanji-meanings.mjs';
 import { referencePresentation } from '@/lib/server/content/reference-presentation.mjs';
 import { EntryNavigation } from '@/components/entry-navigation';
 import { MarkStudied } from '@/components/mark-studied';
@@ -24,13 +25,15 @@ export default async function Detail({params}: {params: Promise<{kind: string; i
   const english = item.contentLinks.find(({content}) => content.kind === 'explanation' && content.status === 'approved' && object(content.payloadJson).kind === 'generatedEnglishExplanation')?.content;
   const otherReferences = item.contentLinks.filter(({content}) => content.id !== english?.id);
   const questions=otherReferences.filter(({content}) => content.kind==='question');
+  // Highlights must use the English meaning actually shown (book or approved supplement), not the raw book field.
+  const shownMeanings=item.kanji?resolveKanjiMeanings(item.contentLinks.map(({content})=>content),item.kanji.meaningsJson).meanings.flatMap(m=>m.split(/[\/;,]/).map(x=>x.trim()).filter(x=>/^[A-Za-z][A-Za-z' -]*$/.test(x))):undefined;
   const references=referencePresentation(otherReferences.filter(({content}) => content.kind!=='question').map(link=>link.content));
   return <><Link className="back" href={`/${kind}`}>← {titles[kind]}</Link><EntryNavigation kind={kind} {...neighbors}><h1 lang="ja" className="japanese item-title">{name(item)}</h1></EntryNavigation>
     <ItemFacts item={item}/>
     <MarkStudied itemId={id} initial={completion}/>
     <Comparisons comparisons={comparisons}/>
     {contexts.length>0&&<section><h2>Saved sentence contexts</h2>{contexts.map(c=><article className="study-example" key={`${c.contentId}-${c.sentenceId}`}><p className="field-label">Generated · human-reviewed revision {c.revision}</p><p className="japanese sentence" lang="ja">{c.japanese}</p>{c.translation&&<details><summary>Sentence translation</summary><p>{c.translation}</p></details>}</article>)}</section>}
-    <section><h2>Examples &amp; study notes</h2>{references.length ? references.map(({content,reading,supplement}) => <ContentBlock key={content.id} content={content} targetMeanings={item.kanji?.meaningsJson} meaningSupplement={supplement} displayReading={reading} showEvidence={false}/>) : <p className="empty">No examples supplied.</p>}{item.contentLinks.length===120 && <p className="notice">Showing the first 120 linked references. Browse sources for more.</p>}</section>
+    <section><h2>Examples &amp; study notes</h2>{references.length ? references.map(({content,reading,supplement}) => <ContentBlock key={content.id} content={content} targetMeanings={shownMeanings} meaningSupplement={supplement} displayReading={reading} showEvidence={false}/>) : <p className="empty">No examples supplied.</p>}{item.contentLinks.length===120 && <p className="notice">Showing the first 120 linked references. Browse sources for more.</p>}</section>
     {questions.length>0 && <details><summary>Reference questions · {questions.length}</summary>{questions.map(({content}) => <ContentBlock key={content.id} content={content} showEvidence={false}/>)}</details>}
     <Dictionary itemId={id}/>
   </>;
