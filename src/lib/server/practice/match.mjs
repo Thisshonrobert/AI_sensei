@@ -1,4 +1,5 @@
 import { normalizeReading } from '../review/text.mjs';
+import { resolveKanjiMeanings } from '../content/kanji-meanings.mjs';
 
 // Match practice is read-only: no Attempt, ReviewLog, card or session writes and no FSRS transition.
 const key = answer => String(answer).normalize('NFKC').trim().toLowerCase();
@@ -34,16 +35,22 @@ export async function matchCandidates(db, userId, kind) {
   const objective = kind === 'kanji' ? 'kanji_meaning' : 'vocab_reading_meaning';
   const cards = await db.card.findMany({
     where: { userId, objective, status: { in: ['new', 'active'] }, item: { status: 'approved', userItems: { some: { userId, introducedAt: { not: null } } } } },
-    include: { item: { select: { kanji: { select: { onReadingsJson: true, kunReadingsJson: true } } } } },
+    include: { item: { select: { id: true, kanji: { select: { meaningsJson: true, onReadingsJson: true, kunReadingsJson: true } }, vocabulary: { select: { meaningEn: true } } } } },
     take: 2000,
   });
-  return cards.map(c => {
-    const meaning = first(c.answerSpecJson.acceptedGlosses) || String(c.answerSpecJson.meaning).split(';')[0].trim();
-    return {
-      id: c.id,
-      prompt: c.promptSpecJson.text,
-      answer: kind === 'kanji' ? kanjiAnswer(c.item.kanji, meaning) : vocabAnswer(c.answerSpecJson),
-    };
+  // Book meanings can be Japanese-only; take the English gloss the item pages show (printed or approved supplement).
+  const supplements = await db.content.findMany({
+    where: { kind: 'explanation', status: 'approved', successor: null, payloadJson: { path: ['kind'], equals: 'dictionaryFieldSupplement' }, items: { some: { itemId: { in: cards.map(c => c.item.id) } } } },
+    select: { id: true, kind: true, origin: true, status: true, revision: true, createdAt: true, successor: { select: { id: true } }, payloadJson: true, items: { select: { itemId: true } } },
+  });
+  const byItem = new Map();
+  for (const row of supplements) for (const { itemId } of row.items) byItem.set(itemId, [...(byItem.get(itemId) ?? []), row]);
+  return cards.flatMap(c => {
+    const { item } = c;
+    const book = item.kanji?.meaningsJson ?? item.vocabulary?.meaningEn ?? c.answerSpecJson.meaning;
+    const meaning = first(resolveKanjiMeanings(byItem.get(item.id) ?? [], book).meanings.filter(m => /[A-Za-z]/.test(m)));
+    if (!meaning) return [];
+    return [{ id: c.id, prompt: c.promptSpecJson.text, answer: kind === 'kanji' ? kanjiAnswer(item.kanji, meaning) : vocabAnswer({ reading: c.answerSpecJson.reading, meaning }) }];
   });
 }
 
