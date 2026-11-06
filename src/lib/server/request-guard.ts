@@ -22,5 +22,9 @@ export function isTrustedAppHost(request: NextRequest) {
 export function isSameOriginRequest(request: NextRequest) {
   const host = request.headers.get('host');
   if (!host || request.headers.get('sec-fetch-site') === 'cross-site') return false;
-  return request.headers.get('origin') === `${request.nextUrl.protocol}//${host}`;
+  const protocol = process.env.RENDER === 'true'
+    ? request.headers.get('x-forwarded-proto')?.split(',')[0].trim()
+    : request.nextUrl.protocol.slice(0, -1);
+  if (!protocol || (process.env.RENDER === 'true' && protocol !== 'https')) return false;
+  return request.headers.get('origin') === `${protocol}://${host}`;
 }
