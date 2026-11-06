@@ -15,8 +15,7 @@ export function isTrustedAppHost(request: NextRequest) {
   return process.env.RENDER === 'true'
     && Boolean(process.env.APP_PASSWORD)
     && Boolean(renderHost)
-    && hostname === renderHost
-    && hostHeader.split(':')[0] === renderHost;
+    && (hostname === renderHost || hostHeader.split(':')[0] === renderHost);
 }
 
 export function sameOriginDiagnostics(request: NextRequest) {
