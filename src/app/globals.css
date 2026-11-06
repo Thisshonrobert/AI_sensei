@@ -40,6 +40,7 @@ p { line-height: 1.7; margin: .65rem 0; overflow-wrap: anywhere; }
 .notice { border: 1px solid #d8d0bd; background: #f1eee4; padding: .85rem 1.1rem; font-size: .9rem; line-height: 1.7; margin: 1rem 0; }
 .search { max-width: 620px; margin: 1.8rem 0; }.search label { display: block; font-size: .85rem; margin-bottom: .4rem; }
 .entry-list, .source-list, .citations { list-style: none; padding: 0; }
+.entry-list { list-style: decimal; padding-left: 2.5rem; }
 .entry-list li { border-top: 1px solid #cdd0c3; }
 .entry-link { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; align-items: baseline; gap: 1rem; padding: .9rem .3rem; color: #252923; text-decoration: none; }
 .entry-link:hover { background: #edeedd; }.entry-link .japanese { font-size: 1.5rem; }.entry-link > span:last-child { color: #505c4d; overflow-wrap: anywhere; }.reading { color: #505c4d; }

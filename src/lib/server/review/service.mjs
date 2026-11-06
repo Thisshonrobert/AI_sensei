@@ -447,7 +447,10 @@ export async function dashboard(db,userId=LOCAL_USER_ID,now=new Date()) {
  for(const kind of ['vocabulary','kanji','grammar']){
   const membership=kind==='kanji'?{curriculumRole:'core_kanji'}:{OR:[{curriculumRole:null},{curriculumRole:{not:'context_reference'}}],source:{sourceType:'book'}};
   const where={kind,status:'approved',sourceEntries:{some:{verificationStatus:'verified',successor:null,...membership}}};
-  progress[kind]={total:await db.item.count({where}),introduced:await db.item.count({where:{...where,userItems:{some:{userId,introducedAt:{not:null}}}}})};
+  const introduced=await db.item.count({where:{...where,userItems:{some:{userId,introducedAt:{not:null}}}}});
+  // Studied items outside the core pool (e.g. contextual vocabulary) are shown beside, not inside, the core fraction.
+  const outside=(await db.item.count({where:{kind,status:'approved',userItems:{some:{userId,introducedAt:{not:null}}}}}))-introduced;
+  progress[kind]={total:await db.item.count({where}),introduced,outside};
  }
  const user=await db.user.findUnique({where:{id:userId}});
  if(!user)return {activity:summarizeActivity([],now),progress,studiedToday:0,waitingItems:0,waitingObjectives:0,partialItems:0,blockedItems:0,missingObjectives:0,caps:{...DEFAULT_CAPS},waitingFirstRecall:0,reviewMoreAvailable:false,reviewCount:0,actionableDue:0,due:0,buriedDue:0,deferred:0,contentGaps:0,used:{vocabulary:0,kanji:0,grammar:0},limits:{...DEFAULT_CAPS},timeBudgetMinutes:30,sessionId:null};

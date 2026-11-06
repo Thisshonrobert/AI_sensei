@@ -9,7 +9,7 @@ export type { ReviewCaps } from "./selection.mjs";
 import type { ReviewCaps } from "./selection.mjs";
 export type StudyStatus={introducedAt:string|null;waiting:number;active:number;paused:number;missing:string[];optional:boolean};
 export type Activity={streak:number;bestStreak:number;reviewsToday:number;reviewsYesterday:number;reviewsTotal:number;readingsTotal:number;weeklyTotal:number;weeklyThisWeek:number;timezone:string;days:{day:string;label:string;active:boolean;today:boolean}[]};
-export type Dashboard={activity:Activity;progress:Record<string,{total:number;introduced:number}>;studiedToday:number;waitingItems:number;waitingObjectives:number;partialItems:number;blockedItems:number;missingObjectives:number;caps:ReviewCaps;waitingFirstRecall:number;reviewMoreAvailable:boolean;reviewCount:number;actionableDue:number;due:number;buriedDue:number;deferred:number;contentGaps:number;used:ReviewCaps;limits:ReviewCaps;timeBudgetMinutes:number;sessionId:string|null;sessionStatus?:string};
+export type Dashboard={activity:Activity;progress:Record<string,{total:number;introduced:number;outside:number}>;studiedToday:number;waitingItems:number;waitingObjectives:number;partialItems:number;blockedItems:number;missingObjectives:number;caps:ReviewCaps;waitingFirstRecall:number;reviewMoreAvailable:boolean;reviewCount:number;actionableDue:number;due:number;buriedDue:number;deferred:number;contentGaps:number;used:ReviewCaps;limits:ReviewCaps;timeBudgetMinutes:number;sessionId:string|null;sessionStatus?:string};
 export type ResponseInput = {sessionId:string;cardId:string;stateVersion:number;clientEventId:string;answer:Answer};
 export const LOCAL_USER_ID:string;
 export class ReviewError extends Error {status:number}
