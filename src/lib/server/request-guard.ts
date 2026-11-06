@@ -28,10 +28,22 @@ export function isSameOriginRequest(request: NextRequest) {
     const hosted = process.env.RENDER === 'true';
     const expectedProtocol = hosted ? 'https:' : request.nextUrl.protocol;
     const expectedHost = hosted ? process.env.RENDER_EXTERNAL_HOSTNAME?.toLowerCase() : host.toLowerCase();
-    if (!expectedHost) return false;
-    return parsedOrigin.origin === origin
+    const matches = Boolean(expectedHost)
+      && parsedOrigin.origin === origin
       && parsedOrigin.protocol === expectedProtocol
       && parsedOrigin.host.toLowerCase() === expectedHost;
+    if (!matches && hosted) {
+      console.warn('same-origin-guard', JSON.stringify({
+        originPresent: Boolean(origin),
+        canonicalOrigin: parsedOrigin.origin === origin,
+        secureOrigin: parsedOrigin.protocol === 'https:',
+        hostMatches: Boolean(expectedHost) && parsedOrigin.host.toLowerCase() === expectedHost,
+        expectedHostConfigured: Boolean(expectedHost),
+        hostHeaderPresent: Boolean(host),
+        fetchSite: request.headers.get('sec-fetch-site') ?? 'missing',
+      }));
+    }
+    return matches;
   } catch {
     return false;
   }
