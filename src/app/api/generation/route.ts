@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/server/db';
+import { isSameOriginRequest, isTrustedAppHost } from '@/lib/server/request-guard';
 import { LOCAL_USER_ID,createUser } from '@/lib/server/review/service.mjs';
 import { GenerationError,generationView,generationList,generationTargets,exportPrompt,importDraft,approveDraft,retireRun,hideRun,generateDraft,saveContext,completeReading,MAX_APPROVAL_BODY_CHARS } from '@/lib/server/generation/service.mjs';
 import { providerConfiguration } from '@/lib/server/generation/gemini.mjs';
@@ -21,15 +22,13 @@ const input=z.discriminatedUnion('action',[
 ]);
 const send=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});
 const sendRun=async(value:Run)=>send(value.draft?{...value,reader:{...await prepareReader(value),knownKanji:await knownKanji(db,LOCAL_USER_ID)}}:value);
-const local=(r:NextRequest)=>['127.0.0.1','localhost'].includes(r.nextUrl.hostname)&&/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(r.headers.get('host')||'');
 function failure(e:unknown){return e instanceof GenerationError?send({error:e.message},e.status):e instanceof z.ZodError?send({error:'Invalid generation request'},400):send({error:'Practice could not be saved. Stored reviews remain available.'},500);}
 export async function GET(r:NextRequest){
- if(!local(r)||r.headers.get('sec-fetch-site')==='cross-site')return send({error:'Local access only'},403);
+ if(!isTrustedAppHost(r)||r.headers.get('sec-fetch-site')==='cross-site')return send({error:'Trusted host required'},403);
  try{const run=r.nextUrl.searchParams.get('run');return send(run?await generationView(db,LOCAL_USER_ID,id.parse(run)):{targets:await generationTargets(db,LOCAL_USER_ID),runs:await generationList(db,LOCAL_USER_ID),provider:providerConfiguration()});}catch(e){return failure(e);}
 }
 export async function POST(r:NextRequest){
- const origin=local(r)?new URL(`${r.nextUrl.protocol}//${r.headers.get('host')}`).origin:null;
- if(!origin||r.headers.get('origin')!==origin||r.headers.get('sec-fetch-site')==='cross-site')return send({error:'Same-origin local request required'},403);
+ if(!isTrustedAppHost(r)||!isSameOriginRequest(r))return send({error:'Same-origin request required'},403);
  if(!r.headers.get('content-type')?.startsWith('application/json'))return send({error:'JSON required'},415);
  try{
   const body=await r.text();if(body.length>MAX_APPROVAL_BODY_CHARS)return send({error:'Request too large'},413);

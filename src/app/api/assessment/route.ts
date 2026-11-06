@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/server/db';
+import { isSameOriginRequest, isTrustedAppHost } from '@/lib/server/request-guard';
 import { LOCAL_USER_ID,createUser } from '@/lib/server/review/service.mjs';
 import { AssessmentError,startAssessment,assessmentView,currentAssessment,saveAnswer,beginReading,submitAssessment,selfGrade,continuePractice,reportQuestion } from '@/lib/server/assessment/service.mjs';
 export const runtime='nodejs';
@@ -16,15 +17,13 @@ const input=z.discriminatedUnion('action',[
  z.object({action:z.literal('grade'),sessionId:id,questionId:id,outcome:z.enum(['correct','incorrect','ungraded']),components:z.object({readingCorrect:z.boolean(),meaningCorrect:z.boolean()}).strict().optional()}).strict(),
 ]);
 const send=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});
-const local=(r:NextRequest)=>['127.0.0.1','localhost'].includes(r.nextUrl.hostname)&&/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(r.headers.get('host')||'');
 function failure(e:unknown){return e instanceof AssessmentError?send({error:e.message},e.status):e instanceof z.ZodError?send({error:'Invalid assessment request'},400):send({error:'Test could not be saved. Retry or resume your committed answers.'},500);}
 export async function GET(request:NextRequest){
- if(!local(request)||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Local access only'},403);
+ if(!isTrustedAppHost(request)||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Trusted host required'},403);
  try{const sessionId=request.nextUrl.searchParams.get('session');return send(sessionId?await assessmentView(db,LOCAL_USER_ID,id.parse(sessionId)):await currentAssessment(db,LOCAL_USER_ID));}catch(e){return failure(e);}
 }
 export async function POST(request:NextRequest){
- const origin=local(request)?new URL(`${request.nextUrl.protocol}//${request.headers.get('host')}`).origin:null;
- if(!origin||request.headers.get('origin')!==origin||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Same-origin local request required'},403);
+ if(!isTrustedAppHost(request)||!isSameOriginRequest(request))return send({error:'Same-origin request required'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return send({error:'JSON required'},415);
  try{
   const body=await request.text();if(body.length>10000)return send({error:'Request too large'},413);

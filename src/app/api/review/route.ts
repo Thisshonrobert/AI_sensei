@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/server/db';
+import { isSameOriginRequest, isTrustedAppHost } from '@/lib/server/request-guard';
 import { LOCAL_USER_ID, ReviewError, createUser, syncCards, startSession, sessionView, resumeSession, introduce, commitResponse, rate, stopSession, updateBudget, markUnfamiliar, markStudied, updateCaps, currentSession } from '@/lib/server/review/service.mjs';
 
 export const runtime='nodejs';
@@ -28,7 +29,6 @@ const input=z.discriminatedUnion('action',[
  z.object({action:z.literal('caps'),values:caps}).strict(),
 ]);
 function send(value:unknown,status=200){return NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});}
-function local(request:NextRequest){return ['127.0.0.1','localhost'].includes(request.nextUrl.hostname)&&/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(request.headers.get('host')||'');}
 function failure(error:unknown){
  if(error instanceof ReviewError)return send({error:error.message},error.status);
  if(error instanceof z.ZodError)return send({error:'Invalid review request'},400);
@@ -36,15 +36,14 @@ function failure(error:unknown){
  return send({error:'Review could not be saved. Your committed response is retained; retry or resume.'},500);
 }
 export async function GET(request:NextRequest){
- if(!local(request)||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Local access only'},403);
+ if(!isTrustedAppHost(request)||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Trusted host required'},403);
  try {
   const id=await currentSession(db,LOCAL_USER_ID);
   return send(id?await sessionView(db,LOCAL_USER_ID,id):null);
  }catch(error){return failure(error);}
 }
 export async function POST(request:NextRequest){
- const expectedOrigin=local(request)?new URL(`${request.nextUrl.protocol}//${request.headers.get('host')}`).origin:null;
- if(!expectedOrigin||request.headers.get('origin')!==expectedOrigin||request.headers.get('sec-fetch-site')==='cross-site')return send({error:'Same-origin local request required'},403);
+ if(!isTrustedAppHost(request)||!isSameOriginRequest(request))return send({error:'Same-origin request required'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return send({error:'JSON required'},415);
  if(Number(request.headers.get('content-length')||0)>10000)return send({error:'Request too large'},413);
  try {
