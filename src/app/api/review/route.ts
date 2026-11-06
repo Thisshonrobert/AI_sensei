@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/server/db';
-import { isSameOriginRequest, isTrustedAppHost, sameOriginDiagnostics } from '@/lib/server/request-guard';
+import { isSameOriginRequest, isTrustedAppHost } from '@/lib/server/request-guard';
 import { LOCAL_USER_ID, ReviewError, createUser, syncCards, startSession, sessionView, resumeSession, introduce, commitResponse, rate, stopSession, updateBudget, markUnfamiliar, markStudied, updateCaps, currentSession } from '@/lib/server/review/service.mjs';
 
 export const runtime='nodejs';
@@ -43,8 +43,7 @@ export async function GET(request:NextRequest){
  }catch(error){return failure(error);}
 }
 export async function POST(request:NextRequest){
- if(!isTrustedAppHost(request))return send({error:'Same-origin request required'},403);
- if(!isSameOriginRequest(request))return send({error:'Same-origin request required',...(request.headers.get('x-codex-origin-diagnostic')==='1'?{diagnostic:sameOriginDiagnostics(request)}:{})},403);
+ if(!isTrustedAppHost(request)||!isSameOriginRequest(request))return send({error:'Same-origin request required'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return send({error:'JSON required'},415);
  if(Number(request.headers.get('content-length')||0)>10000)return send({error:'Request too large'},413);
  try {
