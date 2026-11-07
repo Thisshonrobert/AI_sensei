@@ -10,6 +10,9 @@ const strings = value => Array.isArray(value)
 // Import placeholders such as "Meaning not supplied by source" are not printed meanings.
 const placeholder = value => /^(?:meaning )?not supplied\b/i.test(value) || /^not_supplied$/i.test(value);
 const hasEnglishText = value => /[A-Za-z]/.test(value) && !placeholder(value);
+// Choice-mode recall needs an optionable English gloss: each meaning must be printable ASCII
+// with Latin letters (the same rule the choice builder applies with isEnglishMeaning).
+export const isEnglishGloss = value => { const text = String(value ?? '').trim(); return /^[\x20-\x7E]+$/.test(text) && /[A-Za-z]/.test(text); };
 const fieldRank = path => {
   const rank = KANJI_MEANING_FIELD_PATHS.indexOf(path);
   return rank === -1 ? KANJI_MEANING_FIELD_PATHS.length : rank;
@@ -37,9 +40,9 @@ export function isKanjiMeaningSupplement(content) {
 export function resolveKanjiMeanings(contents, fallback = []) {
   const original = strings(fallback).filter(value => !placeholder(value));
   const printedEnglish = original.filter(hasEnglishText);
-  if (printedEnglish.length) return { meanings: printedEnglish, text: printedEnglish.join(' · '), source: 'book', supplement: null, original };
+  if (printedEnglish.length) return { meanings: printedEnglish, text: printedEnglish.join(' · '), source: 'book', englishGloss: true, supplement: null, original };
   const supplement = (contents ?? []).filter(isKanjiMeaningSupplement).sort(compare)[0] ?? null;
-  if (!supplement) return { meanings: original, text: original.join(' · '), source: 'book', supplement: null, original };
+  if (!supplement) return { meanings: original, text: original.join(' · '), source: 'book', englishGloss: false, supplement: null, original };
   const meanings = strings(supplement.payloadJson.selectedMeanings);
-  return { meanings, text: meanings.join(' · '), source: 'supplement', supplement, original };
+  return { meanings, text: meanings.join(' · '), source: 'supplement', englishGloss: meanings.some(isEnglishGloss), supplement, original };
 }

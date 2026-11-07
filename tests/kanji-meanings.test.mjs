@@ -71,6 +71,18 @@ test('book wording is preserved when no approved English supplement exists', () 
   assert.deepEqual(resolved.meanings, ['頭にある臓器']);
   assert.equal(resolved.source, 'book');
   assert.equal(resolved.supplement, null);
+  assert.equal(resolved.englishGloss, false);
+});
+
+test('englishGloss marks the outcomes a kanji meaning card is allowed to store', () => {
+  assert.equal(resolveKanjiMeanings([], ['Neighbour']).englishGloss, true);
+  assert.equal(resolveKanjiMeanings([dictionary('dict', ['plain'])], ['名状し難い']).englishGloss, true);
+  // A supplement whose glosses are Japanese wording still cannot anchor a recall card.
+  assert.equal(resolveKanjiMeanings([dictionary('dict', ['内臓'])], ['名状し難い']).englishGloss, false);
+  // Multiple glosses keep usable English beside Japanese wording…
+  assert.equal(resolveKanjiMeanings([dictionary('dict', ['poison', '毒'])], ['毒']).englishGloss, true);
+  // …but a single mixed gloss fails the same full-ASCII rule the choice builder applies.
+  assert.equal(resolveKanjiMeanings([dictionary('dict', ['poison; 毒'])], ['毒']).englishGloss, false);
 });
 
 test('an import placeholder meaning is treated as missing and the dictionary gloss fills it', () => {

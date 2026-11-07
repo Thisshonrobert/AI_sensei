@@ -5,7 +5,7 @@ import { configuration, initialState, schedule, effectiveRating, studyDay, nextS
 import { hasIdleGap, sessionElapsedMs } from './timing.mjs';
 import { buildKanjiMeaningChoices, buildKanjiReadingChoices, buildVocabChoices } from './choices.mjs';
 import { studyContent } from '../content/study.mjs';
-import { isKanjiMeaningSupplement, resolveKanjiMeanings } from '../content/kanji-meanings.mjs';
+import { isEnglishGloss, isKanjiMeaningSupplement, resolveKanjiMeanings } from '../content/kanji-meanings.mjs';
 import { localDictionary } from '../generation/dictionary.mjs';
 import { activitySummary,summarizeActivity } from './activity.mjs';
 import { normalizeReading } from './text.mjs';
@@ -54,11 +54,21 @@ async function kanjiExampleWords(tx,itemId) {
 }
 const wordKey=(writing,reading)=>createHash('sha256').update(JSON.stringify([writing.normalize('NFC'),reading.normalize('NFC')])).digest('hex');
 async function addCard(tx,user,item,objective,prompt,answer,now,extra={}) {
- const prior=await tx.card.findFirst({where:{userId:user.id,itemId:item.id,objective}});
+ // 'retired' rows are inert evidence history; the only writer is the A6 retirement script for the
+ // objective this builder no longer creates, so they must not block current-evidence recreation.
+ const prior=await tx.card.findFirst({where:{userId:user.id,itemId:item.id,objective,status:{not:'retired'}}});
  if(prior)return 0;
  const evidence=await tx.sourceEntry.findMany({where:{id:{in:prompt.sourceEntryIds},verificationStatus:'verified'},select:{id:true,sourceId:true},take:20});
  await tx.card.create({data:{userId:user.id,itemId:item.id,objective,promptSpecJson:{...prompt,sources:evidence,itemRevision:item.revision,templateVersion:1},answerSpecJson:answer,fsrsStateJson:initialState(now),...extra}});
  return 1;
+}
+
+// Meaning supplements may sit outside the first 20 linked records, so resolve them explicitly.
+async function kanjiMeaningSupplements(tx,kanjiIds) {
+ const supplements=await tx.content.findMany({where:{status:'approved',kind:'explanation',successor:{is:null},payloadJson:{path:['kind'],equals:'dictionaryFieldSupplement'},items:{some:{itemId:{in:kanjiIds}}}},select:{id:true,kind:true,origin:true,status:true,payloadJson:true,successor:{select:{id:true}},sourceEntries:{where:evidenceWhere,take:4,select:{id:true}},items:{where:{itemId:{in:kanjiIds}},select:{itemId:true}}},take:1200});
+ const meaningSupplements=new Map();
+ for(const content of supplements)if(isKanjiMeaningSupplement(content))for(const link of content.items){const list=meaningSupplements.get(link.itemId);if(list)list.push(content);else meaningSupplements.set(link.itemId,[content]);}
+ return meaningSupplements;
 }
 
 export async function syncCards(db,userId,now=new Date(),itemIds) {
@@ -67,12 +77,7 @@ export async function syncCards(db,userId,now=new Date(),itemIds) {
   // Explicit bounded pool. Larger intake is phase 6; never fetch the entire library into memory.
   const items=await tx.item.findMany({where:{...(itemIds?{id:{in:itemIds}}:{}),status:'approved',sourceEntries:{some:evidenceWhere}},take:500,orderBy:{id:'asc'},include:{vocabulary:true,kanji:true,grammar:true,sourceEntries:{where:evidenceWhere,take:12,select:{id:true,curriculumRole:true}},contentLinks:{where:{content:{status:'approved',successor:null}},take:20,include:{content:{include:{sourceEntries:{where:evidenceWhere,take:4}}}}}}});
   const kanjiIds=items.filter(item=>item.kanji).map(item=>item.id);
-  const meaningSupplements=new Map();
-  if(kanjiIds.length){
-   // Meaning supplements may sit outside the first 20 linked records, so resolve them explicitly.
-   const supplements=await tx.content.findMany({where:{status:'approved',kind:'explanation',successor:{is:null},payloadJson:{path:['kind'],equals:'dictionaryFieldSupplement'},items:{some:{itemId:{in:kanjiIds}}}},select:{id:true,kind:true,origin:true,status:true,payloadJson:true,successor:{select:{id:true}},sourceEntries:{where:evidenceWhere,take:4,select:{id:true}},items:{where:{itemId:{in:kanjiIds}},select:{itemId:true}}},take:1200});
-   for(const content of supplements)if(isKanjiMeaningSupplement(content))for(const link of content.items){const list=meaningSupplements.get(link.itemId);if(list)list.push(content);else meaningSupplements.set(link.itemId,[content]);}
-  }
+  const meaningSupplements=kanjiIds.length?await kanjiMeaningSupplements(tx,kanjiIds):new Map();
   const existingCards=await tx.card.findMany({where:{userId,itemId:{in:items.map(item=>item.id)}},select:{itemId:true,objective:true},take:1500});
   const existing=new Set(existingCards.map(card=>`${card.itemId}:${card.objective}`));
   const ensureCard=async(item,objective,prompt,answer,extra={})=>{
@@ -89,11 +94,19 @@ export async function syncCards(db,userId,now=new Date(),itemIds) {
    }
    if(item.kanji&&item.sourceEntries.some(e=>e.curriculumRole==='core_kanji')) {
     const resolved=resolveKanjiMeanings([...(meaningSupplements.get(item.id)??[]),...item.contentLinks.map(link=>link.content)],item.kanji.meaningsJson);
-    let meanings=resolved.meanings,meaningSources=resolved.supplement?resolved.supplement.sourceEntries.map(e=>e.id):sources;
-    if(!meaningSources.length)meaningSources=sources;
-    if(!meanings.length) {
+    // Recall pairs an English core gloss with a reading (choice mode). Japanese-only book wording
+    // stays a gap until an approved English gloss exists; missing source facts are never guessed.
+    let meanings=resolved.englishGloss?resolved.meanings:[],meaningSources=sources;
+    if(meanings.length) {
+     const supplementSources=resolved.supplement?resolved.supplement.sourceEntries.map(e=>e.id):[];
+     meaningSources=supplementSources.length?supplementSources:sources;
+    }
+    else {
      const dictionary=item.contentLinks.find(l=>l.content.kind==='explanation'&&l.content.origin==='user'&&l.content.sourceEntries.length&&strings(l.content.payloadJson.selectedMeanings).length&&!l.content.payloadJson.addedBy&&!l.content.payloadJson.acceptedLimitations);
-     if(dictionary){meanings=strings(dictionary.content.payloadJson.selectedMeanings);meaningSources=dictionary.content.sourceEntries.map(e=>e.id);}
+     if(dictionary) {
+      const list=strings(dictionary.content.payloadJson.selectedMeanings);
+      if(list.some(isEnglishGloss)){meanings=list;meaningSources=dictionary.content.sourceEntries.map(e=>e.id);}
+     }
     }
     if(meanings.length)created+=await ensureCard(item,'kanji_meaning',{text:item.kanji.glyph,cue:'Choose the reading and meaning.',sourceEntryIds:meaningSources},{meaning:meanings.join('; '),acceptedGlosses:meanings});
     else gaps.push({itemId:item.id,reason:'core meaning evidence missing'});
@@ -106,6 +119,38 @@ export async function syncCards(db,userId,now=new Date(),itemIds) {
    }
   }
   return {created,gaps,boundedPool:items.length,limit:500};
+ });
+}
+
+// Dedicated repair path for stale kanji_meaning cards built before an approved English gloss existed
+// (their answer stores the Japanese book keyword, which choice-mode recall cannot offer). syncCards
+// never rebuilds a live card, so retire-and-recreate is explicit and bumps templateVersion past every
+// prior row to satisfy cards_userId_itemId_objective_templateVersion_key. Proof of the new gloss is
+// required first: unresolved book facts stay gaps, they are never guessed.
+export async function rebuildKanjiMeaningCard(db,userId,itemId,{now=new Date()}={}) {
+ return locked(db,userId,async(tx,user)=>{
+  const item=await tx.item.findFirst({where:{id:itemId,status:'approved',sourceEntries:{some:evidenceWhere}},include:{kanji:true,sourceEntries:{where:evidenceWhere,take:12,select:{id:true,curriculumRole:true}},contentLinks:{where:{content:{status:'approved',successor:null}},take:20,include:{content:{include:{sourceEntries:{where:evidenceWhere,take:4}}}}}}});
+  if(!item?.kanji||!item.sourceEntries.some(e=>e.curriculumRole==='core_kanji'))return {recreated:false,retired:0,reason:'item is not a source-complete core kanji'};
+  const meaningSupplements=await kanjiMeaningSupplements(tx,[itemId]);
+  const resolved=resolveKanjiMeanings([...(meaningSupplements.get(itemId)??[]),...item.contentLinks.map(link=>link.content)],item.kanji.meaningsJson);
+  if(!resolved.englishGloss)return {recreated:false,retired:0,reason:'core meaning evidence missing'};
+  const priors=await tx.card.findMany({where:{userId,itemId,objective:'kanji_meaning'},orderBy:{templateVersion:'desc'},select:{id:true,status:true,templateVersion:true,answerSpecJson:true,fsrsStateJson:true}});
+  const live=priors.filter(card=>card.status!=='retired');
+  let retired=0;
+  if(live.length) {
+   if(live.every(card=>isEnglishGloss(card.answerSpecJson?.meaning)))return {recreated:false,retired:0,reason:'current answer is usable'};
+   for(const card of live) {
+    // card_due_state requires a non-new card's dueAt to equal its stored FSRS due; a never-reviewed
+    // card takes the due date already in its own initial state. No review or rating is created.
+    await tx.card.update({where:{id:card.id},data:{status:'retired',...(card.status==='new'?{dueAt:new Date(card.fsrsStateJson.due)}:{})}});
+    retired++;
+   }
+  }
+  const supplementSources=resolved.supplement?resolved.supplement.sourceEntries.map(e=>e.id):[];
+  const meaningSources=supplementSources.length?supplementSources:item.sourceEntries.map(e=>e.id);
+  const created=await addCard(tx,user,item,'kanji_meaning',{text:item.kanji.glyph,cue:'Choose the reading and meaning.',sourceEntryIds:meaningSources},{meaning:resolved.meanings.join('; '),acceptedGlosses:resolved.meanings},now,{templateVersion:(priors[0]?.templateVersion??0)+1});
+  if(!created)return {recreated:false,retired,reason:'card creation was skipped'};
+  return {recreated:true,retired,meaning:resolved.text};
  });
 }
 const eligible=now=>({OR:[{buriedUntil:null},{buriedUntil:{lte:now}}],item:{status:'approved'}});

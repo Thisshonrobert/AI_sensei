@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { configuration, initialState, schedule } from '../src/lib/server/review/scheduler.mjs';
 import { retrievability } from '../src/lib/server/review/selection.mjs';
 import { retireKanjiReadingCards } from '../scripts/retire-kanji-reading-cards.mjs';
+import { repairKanjiMeaningCards } from '../scripts/repair-kanji-meaning-cards.mjs';
 import { matchCandidates, matchPairs } from '../src/lib/server/practice/match.mjs';
 import { createUser, syncCards, startSession, sessionView, resumeSession, introduce, commitResponse, rate, stopSession, dashboard, updateBudget, markUnfamiliar } from '../src/lib/server/review/service.mjs';
 import { previewPromotion, recordApproval, promote } from '../src/lib/server/content/canonical-import.mjs';
@@ -131,6 +132,43 @@ test('source-complete core creates exactly one kanji objective with a reading-an
  const missing=await coreContext(u,{context:false});
  assert.equal(await db.card.count({where:{userId:u.id,itemId:missing,objective:'kanji_meaning'}}),1);
  const gaps=await syncCards(db,u.id,now);assert.equal(gaps.gaps.some(g=>g.itemId===missing),false,'a missing source word no longer blocks kanji recall');
+});
+test('Japanese-only kanji wording stays excluded until an approved English gloss exists', {skip:!enabled}, async()=>{
+ const u=await fixture({count:1,studied:false});
+ const itemId=await coreContext(u,{meaning:false});
+ const gaps=await syncCards(db,u.id,now,[itemId]);
+ assert.equal(gaps.gaps.some(g=>g.itemId===itemId&&g.reason==='core meaning evidence missing'),true);
+ assert.equal(await db.card.count({where:{userId:u.id,itemId,objective:'kanji_meaning'}}),0);
+ // Approve a dictionary field supplement the way the production apply script stores one.
+ const dictionarySource=await db.source.create({data:{id:randomUUID(),title:'EDRDG KANJIDIC2 · synthetic',edition:'test',sourceType:'dictionary',language:'ja'}});
+ const contentId=randomUUID();
+ await db.content.create({data:{id:contentId,kind:'explanation',origin:'user',status:'approved',revision:1,payloadJson:{kind:'dictionaryFieldSupplement',fieldPath:'meaning_en',addedBy:'dictionary',selectedMeanings:['core sense']},items:{create:{itemId,role:'support'}},sourceEntries:{create:{id:randomUUID(),sourceId:dictionarySource.id,sourceRecordKey:`synthetic/${contentId}`,revision:1,fieldPresenceJson:{reference:'supplied'},verificationStatus:'verified',verifiedAt:new Date(),originalPayloadJson:{url:'https://example.test',title:'synthetic',selected_sense:'core sense'}}}}});
+ const retried=await syncCards(db,u.id,now,[itemId]);
+ assert.equal(retried.gaps.some(g=>g.itemId===itemId),false);
+ const card=await db.card.findFirst({where:{userId:u.id,itemId,objective:'kanji_meaning'}});
+ assert.equal(card&&card.answerSpecJson.meaning,'core sense');
+ assert.deepEqual(card.answerSpecJson.acceptedGlosses,['core sense']);
+ assert.equal(card.answerSpecJson.reading,undefined,' kanji_meaning cards carry meaning only');
+});
+test('repair retires stale Japanese-meaning cards and recreation stores the approved gloss', {skip:!enabled}, async()=>{
+ const u=await fixture({count:1,studied:false});
+ const itemId=await coreContext(u,{meaning:false});
+ const glyph=(await db.kanji.findUnique({where:{itemId},select:{glyph:true}})).glyph;
+ const entryId=await db.sourceEntry.findFirst({where:{itemId,curriculumRole:'core_kanji',verificationStatus:'verified'},select:{id:true}}).then(row=>row.id);
+ // Mint the legacy shape directly: what the builder created before this guard existed.
+ await db.card.create({data:{id:randomUUID(),userId:u.id,itemId,objective:'kanji_meaning',templateVersion:1,promptSpecJson:{text:glyph,cue:'Choose the reading and meaning.',sourceEntryIds:[entryId]},answerSpecJson:{meaning:'名状し難い'},fsrsStateJson:initialState(now)}});
+ const dryRun=await repairKanjiMeaningCards(db);
+ assert.equal(dryRun.glyphs.includes(glyph),true);assert.equal(dryRun.retired,0);
+ // Approve a dictionary field supplement, then let the repair retire and recreate.
+ const dictionarySource=await db.source.create({data:{id:randomUUID(),title:'EDRDG KANJIDIC2 · synthetic repair',edition:'test',sourceType:'dictionary',language:'ja'}});
+ const contentId=randomUUID();
+ await db.content.create({data:{id:contentId,kind:'explanation',origin:'user',status:'approved',revision:1,payloadJson:{kind:'dictionaryFieldSupplement',fieldPath:'meaning_en',addedBy:'dictionary',selectedMeanings:['core sense']},items:{create:{itemId,role:'support'}},sourceEntries:{create:{id:randomUUID(),sourceId:dictionarySource.id,sourceRecordKey:`synthetic/${contentId}`,revision:1,fieldPresenceJson:{reference:'supplied'},verificationStatus:'verified',verifiedAt:new Date(),originalPayloadJson:{url:'https://example.test',title:'synthetic',selected_sense:'core sense'}}}}});
+ const applied=await repairKanjiMeaningCards(db,{apply:true});
+ assert.equal(applied.retired,1);assert.equal(applied.recreated,1);
+ const card=await db.card.findFirst({where:{userId:u.id,itemId,objective:'kanji_meaning',status:'new'}});
+ assert.equal(card&&card.answerSpecJson.meaning,'core sense');
+ const again=await repairKanjiMeaningCards(db,{apply:true});
+ assert.equal(again.stale,0,'repair is idempotent');
 });
 test('pool is dormant and unresolved grammar/incidental kanji stay excluded', {skip:!enabled}, async()=>{
  const u=await fixture({count:2,kanji:true,meanings:distinctMeanings,studied:false});

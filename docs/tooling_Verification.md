@@ -1,5 +1,24 @@
 # Tooling and verification
 
+## Kanji meaning English-gloss guard and repair — 7 November 2026
+
+Kanji recall cards must store an approved English gloss (the same printable-ASCII rule the choice builder applies). Japanese-only book wording stays a gap; a repair script retires stale cards and recreates them through a dedicated `rebuildKanjiMeaningCard` service path with a `templateVersion` bump.
+
+Commands run in this implementation:
+
+```powershell
+rtk proxy node --test --test-isolation=none tests/kanji-meanings.test.mjs tests/review-choices.test.mjs tests/review-scheduler.test.mjs
+rtk bun run test:review
+rtk bun run test
+rtk bun run lint
+rtk bun run typecheck
+rtk proxy node scripts/repair-kanji-meaning-cards.mjs
+rtk proxy node scripts/repair-kanji-meaning-cards.mjs --apply
+```
+
+- Unit suites 18/18 (kanji-meanings resolver flags, choices, scheduler); `test:review` 41/41 including two new tests: "Japanese-only kanji wording stays excluded until an approved English gloss exists" and "repair retires stale Japanese-meaning cards and recreation stores the approved gloss"; full `bun run test` 153 pass / 0 fail (77 PostgreSQL-gated skips); lint and typecheck clean.
+- Local database (Docker mirror of Neon prod): dry run found 182 `kanji_meaning` candidates, 31 stale (all status `new`, e.g. 臓→内臓, 脳→頭にある臓器); `--apply` retired 31 and recreated 31 with the approved English glosses (臓→"internal organs", 脳→"brain", …), `stillExcluded` 0; a re-run found 0 stale (idempotent). Retired rows keep their original answers as evidence history; spot check showed 臓 v1 retired (`内臓`) and v2 `new` (`internal organs`).
+
 ## Sprint daily recall and match practice — 26 October 2026
 
 Amendment A6. Commands run in this implementation (Node runs server and tests; `bun run build` must precede the browser runner because Playwright serves `next start`):

@@ -15,6 +15,7 @@ export const LOCAL_USER_ID:string;
 export class ReviewError extends Error {status:number}
 export function createUser(db:PrismaClient,id?:string,timezone?:string):Promise<{id:string}>;
 export function syncCards(db:PrismaClient,userId:string,now?:Date,itemIds?:string[]):Promise<{created:number;gaps:{itemId:string;reason:string}[];boundedPool:number;limit:number}>;
+export function rebuildKanjiMeaningCard(db:PrismaClient,userId:string,itemId:string,opts?:{now?:Date}):Promise<{recreated:boolean;retired:number;reason?:string;meaning?:string}>;
 export function currentSession(db:PrismaClient,userId:string,now?:Date):Promise<string|null>;
 export function startSession(db:PrismaClient,userId:string,options?:{now?:Date;reviewMore?:boolean}):Promise<{id:string|null}>;
 export function sessionView(db:PrismaClient,userId:string,id:string,now?:Date):Promise<SessionView>;
