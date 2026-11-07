@@ -6,7 +6,7 @@ import { configuration, initialState, schedule } from '../src/lib/server/review/
 import { retrievability } from '../src/lib/server/review/selection.mjs';
 import { retireKanjiReadingCards } from '../scripts/retire-kanji-reading-cards.mjs';
 import { repairKanjiMeaningCards } from '../scripts/repair-kanji-meaning-cards.mjs';
-import { matchCandidates, matchPairs } from '../src/lib/server/practice/match.mjs';
+import { kanjiAnswer, matchCandidates, matchPairs } from '../src/lib/server/practice/match.mjs';
 import { createUser, syncCards, startSession, sessionView, resumeSession, introduce, commitResponse, rate, stopSession, dashboard, updateBudget, markUnfamiliar } from '../src/lib/server/review/service.mjs';
 import { previewPromotion, recordApproval, promote } from '../src/lib/server/content/canonical-import.mjs';
 import { grammarComparisons, studyContent } from '../src/lib/server/content/study.mjs';
@@ -64,15 +64,32 @@ async function fixture({count=8,kanji=false,meanings=null,studied=true}={}) {
  if(studied)await db.userItem.createMany({data:fixtureIds.map((itemId,i)=>({userId:user.id,itemId,familiarity:'introduced',introducedAt:new Date(+now-(count-i)*60000)}))});
  return {...user,fixtureIds};
 }
-async function ready(user,time=now) {
+// A8: typed entry is retired. Tests commit options the same way the UI does: the correct
+// option is identified from the revealed pose of the choice set, never from hidden data.
+function correctOption(v,card) {
+ const spec=card.answerSpecJson;
+ const predicate=card.objective==='vocab_reading_meaning'?choice=>choice.reading===spec.reading&&choice.meaning===spec.meaning
+  :card.objective==='kanji_meaning'?choice=>choice.meaning===String(spec.meaning).toLowerCase()
+  :card.objective==='grammar_cloze'?choice=>choice.reading===spec.response
+  :choice=>choice.reading===spec.reading;
+ const correct=v.recall.choices.find(predicate);
+ assert.ok(correct,`an option matching the stored answer exists for ${card.objective}`);
+ return correct;
+}
+function choiceInput(v,card,clientEventId=randomUUID(),wrong=false) {
+ const correct=correctOption(v,card);
+ const chosen=wrong?v.recall.choices.find(choice=>choice.id!==correct.id):correct;
+ return {sessionId:v.sessionId,cardId:card.id,stateVersion:card.stateVersion,clientEventId,answer:{choiceId:chosen.id,choiceFingerprint:v.recall.fingerprint}};
+}
+async function ready(user,{time=now,wrong=false}={}) {
  const s=await startSession(db,user.id,{now:time});
  let v=await sessionView(db,user.id,s.id,time);
  if(v.card.status==='new')await introduce(db,user.id,s.id,v.card.id,time);
  v=await sessionView(db,user.id,s.id,time);
- const eventId=randomUUID();
- const input={sessionId:s.id,cardId:v.card.id,stateVersion:v.card.stateVersion,clientEventId:eventId,answer:{reading:'しけん',meaning:'a valid equivalent paraphrase'}};
+ const card=await db.card.findUnique({where:{id:v.card.id}});
+ const input=choiceInput(v,card,randomUUID(),wrong);
  await commitResponse(db,user.id,input,time);
- return {...input,rating:3,components:{readingCorrect:true,meaningCorrect:true}};
+ return {...input,rating:3,components:{}};
 }
 let glyphIndex=0;
 test('flexible study completion is idempotent and preserves scheduler and first-study evidence', {skip:!enabled}, async()=>{
@@ -99,21 +116,25 @@ test('flexible study completion is idempotent and preserves scheduler and first-
  }
 });
 async function coreContext(user,{context=true,meaning=true}={}) {
- const glyph=String.fromCodePoint(0x4e10+glyphIndex++),sourceId=randomUUID();
+ const index=glyphIndex++,glyph=String.fromCodePoint(0x4e10+index),sourceId=randomUUID();
+ // Every synthetic kanji needs its own bare reading and a single-token English meaning,
+ // so the choice builder can assemble decoys that share no token with the correct option.
+ const kun=['ためす','たがやす','たよる','たずさわる','たまう','たおれる'][index%6];
+ const label=['appetite','breath','curiosity','dignity','effort','fortune','gratitude','horizon','instinct','justice','kindness','liberty','mercy','notion','order','patience','quiet','respect','silence','trust','unity','valor','wisdom','zeal'][index%24];
  await db.source.create({data:{id:sourceId,title:'Synthetic core kanji',edition:'test',sourceType:'book',language:'ja'}});
- const raw={source_record_key:'core',character:glyph,meanings:meaning?['synthetic meaning']:[],on_readings:['シ'],kun_readings:[],examples:[],example_words:context?[{word:`${glyph}験`,reading:'しけん',meanings:['source context sense'],source_pdf_pages:[1]}]:[],source_pdf_pages:[1],source_printed_pages:['1'],review_status:'unreviewed',issues:[]};
+ const raw={source_record_key:'core',character:glyph,meanings:meaning?[label]:[],on_readings:['シ'],kun_readings:meaning?[kun]:[],examples:[],example_words:context?[{word:`${glyph}験`,reading:'しけん',meanings:['source context sense'],source_pdf_pages:[1]}]:[],source_pdf_pages:[1],source_printed_pages:['1'],review_status:'unreviewed',issues:[]};
  const batch=await db.importBatch.create({data:{sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:{content_type:'kanji',source:{edition:'test'},entries:[raw],lesson_questions:[],exercise_passages:[]},validationErrorsJson:[]}});
- const selection={batchId:batch.id,records:[{recordKey:'core',family:'entry',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,match:{mode:'create',canonicalKey:glyph},typed:{glyph,meaningsJson:raw.meanings,onReadingsJson:['シ'],kunReadingsJson:[],notes:null},fieldPresence:{meanings:meaning?'supplied':'not_supplied'},fieldOrigins:{},citations:[],kanjiLinks:[]}]};
+ const selection={batchId:batch.id,records:[{recordKey:'core',family:'entry',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,match:{mode:'create',canonicalKey:glyph},typed:{glyph,meaningsJson:raw.meanings,onReadingsJson:['シ'],kunReadingsJson:raw.kun_readings,notes:null},fieldPresence:{meanings:meaning?'supplied':'not_supplied'},fieldOrigins:{},citations:[],kanjiLinks:[]}]};
  const preview=await previewPromotion(db,selection);await recordApproval(db,selection,'core',preview.records[0].confirmationToken,'synthetic-test');await promote(db,selection);
  const itemId=(await db.kanji.findUnique({where:{glyph}})).itemId;
  await syncCards(db,user.id,now,[itemId]);
  return itemId;
 }
-async function approvedGrammar(user,{withQuestion=true}={}) {
+async function approvedGrammar(user,{withQuestion=true,answers=['もの','equivalent answer']}={}) {
  const sourceId=randomUUID();
  await db.source.create({data:{id:sourceId,title:'Synthetic grammar',edition:'test',sourceType:'book',language:'ja'}});
  const raw={source_record_key:'pattern',pattern:'〜もの',formation:['noun + もの'],meanings:['synthetic sense'],source_pdf_pages:[1],source_printed_pages:['1'],examples:[],review_status:'unreviewed',issues:[]};
- const question={source_record_key:'cloze',prompt:'Synthetic cue: noun + ____',origin:'book',format:'fill_in_blank',options:[],answer_specification:{acceptable_answers:['もの','equivalent answer']},source_pdf_pages:[1],source_printed_pages:['1']};
+ const question={source_record_key:'cloze',prompt:'Synthetic cue: noun + ____',origin:'book',format:'fill_in_blank',options:[],answer_specification:{acceptable_answers:answers},source_pdf_pages:[1],source_printed_pages:['1']};
  const batch=await db.importBatch.create({data:{sourceId,fileHash:randomUUID(),pageRangeJson:{},extractorVersion:'fixture',schemaVersion:1,status:'draft',stagedJson:{content_type:'grammar',source:{edition:'test'},entries:[raw],lesson_questions:[question],exercise_passages:[]},validationErrorsJson:[]}});
  const selection={batchId:batch.id,records:[{recordKey:'pattern',family:'entry',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,match:{mode:'create',canonicalKey:randomUUID()},typed:{pattern:'〜もの',patternVariantsJson:[],explanationJa:null,explanationEn:'synthetic sense',nuance:null,formationRulesJson:[{label:'synthetic',precedingForm:'noun',attachment:'もの',exceptions:[],sourceWording:'noun + もの'}],usageJson:{}},fieldPresence:{meanings:'supplied'},fieldOrigins:{},citations:[],kanjiLinks:[]},{recordKey:'cloze',family:'question',identityVerified:true,sourceVerified:true,printedPage:'1',pdfPageIndex:0,targets:[{recordKey:'pattern'}],answerVerified:true,targetsVerified:true}]};
  if(!withQuestion)selection.records.pop();
@@ -188,7 +209,7 @@ test('duplicate/concurrent event has one effect; stale different event conflicts
  const stale={...response,clientEventId:randomUUID()};
  await assert.rejects(()=>commitResponse(db,u.id,stale,now),/stale/i);
  await assert.rejects(()=>rate(db,u.id,{...input,clientEventId:randomUUID()},now),/stale/i);
- const next=await ready(u);
+ const next=await ready(u,{wrong:true});
  assert.equal((await rate(db,u.id,{...next,rating:4,components:{readingCorrect:true,meaningCorrect:false}},now)).rating,1);
 });
 
@@ -286,15 +307,14 @@ test('different canonical senses sharing a written-word reading are separated as
 });
 test('per-type daily caps hold for vocabulary, kanji and grammar, with grammar accepted alternatives', {skip:!enabled}, async()=>{
  const u=await fixture({count:12});const grammarId=await approvedGrammar(u);
- for(const id of [await coreContext(u),await coreContext(u),await coreContext(u),grammarId,await approvedGrammar(u)])await reviews.markStudied(db,u.id,id,now);
+ for(const id of [await coreContext(u),await coreContext(u),await coreContext(u),grammarId,await approvedGrammar(u,{answers:['わけ','another equivalent answer']})])await reviews.markStudied(db,u.id,id,now);
  await reviews.updateCaps(db,u.id,{vocabulary:5,kanji:2,grammar:1});
  const s=await startSession(db,u.id,{now});
  let introduced=0;
  for(;;){const v=await sessionView(db,u.id,s.id,now);if(!v.card)break;
-  const c=v.card;
-  const answer=c.objective==='vocab_reading_meaning'?{reading:'synthetic',meaning:'paraphrase'}:c.objective==='kanji_meaning'?{meaning:'synthetic'}:c.objective==='kanji_reading_context'?{reading:'synthetic'}:{response:'equivalent answer'};
-  const input={sessionId:s.id,cardId:c.id,stateVersion:c.stateVersion,clientEventId:randomUUID(),answer};
-  await commitResponse(db,u.id,input,now);introduced++;await rate(db,u.id,{...input,rating:4,components:c.objective==='vocab_reading_meaning'?{readingCorrect:true,meaningCorrect:true}:{correct:true}},now);
+  const c=await db.card.findUnique({where:{id:v.card.id}});
+  const input=choiceInput(v,c);
+  await commitResponse(db,u.id,input,now);introduced++;await rate(db,u.id,{...input,rating:4,components:{}},now);
  }
  assert.equal(introduced,8);
  const counts=(await sessionView(db,u.id,s.id,now)).used;
@@ -314,19 +334,23 @@ test('heavy backlog no longer blocks first recall and preserves overdue dates', 
  assert.deepEqual(await db.card.findMany({where:{userId:u.id,status:'active'},select:{id:true,dueAt:true},orderBy:{id:'asc'}}),before);
 });
 test('a kanji meaning success never propagates scheduler state to other cards', {skip:!enabled}, async()=>{
- const u=await fixture({count:1,studied:false});const itemId=await coreContext(u);
+ const u=await fixture({count:1,studied:false});
+ // A second core kanji supplies the decoy forms; it stays unstudied, so its card state must not move.
+ await coreContext(u);
+ const itemId=await coreContext(u);
  await reviews.markStudied(db,u.id,itemId,now);
  const others=await db.card.findMany({where:{userId:u.id,itemId:{not:itemId}},orderBy:{id:'asc'}});
  const s=await startSession(db,u.id,{now});const v=await sessionView(db,u.id,s.id,now);
  assert.equal(v.card.objective,'kanji_meaning');
- const input={sessionId:s.id,cardId:v.card.id,stateVersion:0,clientEventId:randomUUID(),answer:{meaning:'synthetic meaning'}};
- await commitResponse(db,u.id,input,now);await rate(db,u.id,{...input,rating:3,components:{correct:true}},now);
+ const card=await db.card.findUnique({where:{id:v.card.id}});
+ const input=choiceInput(v,card);
+ await commitResponse(db,u.id,input,now);await rate(db,u.id,{...input,rating:3,components:{}},now);
  const after=await db.card.findMany({where:{userId:u.id,itemId:{not:itemId}},orderBy:{id:'asc'}});
  assert.deepEqual(after.map(c=>[c.id,c.stateVersion,c.fsrsStateJson,c.dueAt]),others.map(c=>[c.id,c.stateVersion,c.fsrsStateJson,c.dueAt]));
 });
 
 test('approved grammar comparisons are reciprocal, validated and read-only; reveal uses stored formation', {skip:!enabled}, async()=>{
- const u=await fixture({count:1,meanings:distinctMeanings,studied:false});const a=await approvedGrammar(u),b=await approvedGrammar(u);
+ const u=await fixture({count:1,meanings:distinctMeanings,studied:false});const a=await approvedGrammar(u),b=await approvedGrammar(u,{answers:['わけ','another equivalent answer']});
  const comparisonId=randomUUID(),examples=[randomUUID(),randomUUID()];
  await db.$transaction(async tx=>{
   for(const [i,itemId] of [a,b].entries())await tx.content.create({data:{id:examples[i],kind:'sentence',origin:'user',status:'approved',revision:1,payloadJson:{japanese:`synthetic example ${i}`,translation:`meaning ${i}`},items:{create:{itemId,role:'target'}}}});
@@ -348,7 +372,9 @@ test('approved grammar comparisons are reciprocal, validated and read-only; reve
  assert.equal(view.card.objective,'grammar_cloze');assert.equal(view.study,undefined);
  const first=await introduce(db,u.id,session.id,view.card.id,now);assert.ok(first.study.grammar.formation.length);
  view=await sessionView(db,u.id,session.id,now);assert.equal(view.study,undefined);
- await commitResponse(db,u.id,{sessionId:session.id,cardId:view.card.id,stateVersion:0,clientEventId:randomUUID(),answer:{response:'もの'}},now);
+ const grammarCard=await db.card.findUnique({where:{id:view.card.id}});
+ const grammarInput=choiceInput(view,grammarCard);
+ await commitResponse(db,u.id,grammarInput,now);
  view=await sessionView(db,u.id,session.id,now);assert.equal(view.study.grammar.guidanceLabel,'General guidance');
  assert.equal(await db.reviewLog.count({where:{userId:u.id}}),0);
 });
@@ -506,8 +532,9 @@ async function makeDue(cardIds,state) {
 async function answerAll(user,sessionId,time) {
  let answered=0;
  for(;;){const v=await sessionView(db,user.id,sessionId,time);if(!v.card)return answered;
-  const input={sessionId,cardId:v.card.id,stateVersion:v.card.stateVersion,clientEventId:randomUUID(),answer:{reading:'synthetic',meaning:'paraphrase'}};
-  await commitResponse(db,user.id,input,time);await rate(db,user.id,{...input,rating:4,components:{readingCorrect:true,meaningCorrect:true}},time);answered++;}
+  const card=await db.card.findUnique({where:{id:v.card.id}});
+  const input=choiceInput(v,card);
+  await commitResponse(db,user.id,input,time);await rate(db,user.id,{...input,rating:4,components:{}},time);answered++;}
 }
 test('thirty studied vocabulary all enter one session beyond the old allowance', {skip:!enabled}, async()=>{
  const u=await fixture({count:30});
@@ -550,10 +577,10 @@ test('daily caps validate, persist and show on the dashboard', {skip:!enabled}, 
  d=await dashboard(db,u.id,now);assert.deepEqual(d.caps,{vocabulary:50,kanji:20,grammar:5});
 });
 async function answer(user,sessionId,v,time,rating=4) {
- const input={sessionId,cardId:v.card.id,stateVersion:v.card.stateVersion,clientEventId:randomUUID(),answer:{reading:'synthetic',meaning:'paraphrase'}};
+ const card=await db.card.findUnique({where:{id:v.card.id}});
+ const input=choiceInput(v,card);
  await commitResponse(db,user.id,input,time);
- const ok=rating>1;
- await rate(db,user.id,{...input,rating,components:{readingCorrect:ok,meaningCorrect:ok}},time);
+ await rate(db,user.id,{...input,rating,components:{correct:rating>1}},time);
  return input;
 }
 const entriesOf=async id=>(await db.studySession.findUnique({where:{id}})).selectionSnapshotJson.entries;
@@ -574,7 +601,7 @@ test('an Again card returns once at the end of the session as a genuine second r
 test('replaying the same Again rating event does not re-queue twice', {skip:!enabled}, async()=>{
  const u=await fixture({count:2});
  const s=await startSession(db,u.id,{now});const v=await sessionView(db,u.id,s.id,now);
- const input={sessionId:s.id,cardId:v.card.id,stateVersion:v.card.stateVersion,clientEventId:randomUUID(),answer:{reading:'x',meaning:'y'}};
+ const input=choiceInput(v,await db.card.findUnique({where:{id:v.card.id}}));
  await commitResponse(db,u.id,input,now);
  const rated={...input,rating:1,components:{readingCorrect:false,meaningCorrect:false}};
  await Promise.all([rate(db,u.id,rated,now),rate(db,u.id,rated,now)]);await rate(db,u.id,rated,now);
@@ -623,11 +650,11 @@ test('retire step retires reading cards, keeps their logs, and is idempotent', {
  const other=await coreContext(u);const otherMeaning=await db.card.findFirst({where:{userId:u.id,itemId:other}});
  // A never-reviewed legacy card (status new, no due date) must retire too.
  const unseen=await db.$transaction(async tx=>{await tx.$executeRawUnsafe('SET LOCAL session_replication_role = replica');
-  return tx.card.create({data:{userId:u.id,itemId:other,objective:'kanji_reading_context',promptSpecJson:{...otherMeaning.promptSpecJson,cue:'legacy'},answerSpecJson:{reading:'し'},fsrsStateJson:otherMeaning.fsrsStateJson}});});
+  return tx.card.create({data:{userId:u.id,itemId:other,objective:'kanji_reading_context',promptSpecJson:{...otherMeaning.promptSpecJson,cue:'legacy'},answerSpecJson:{reading:'ためす'},fsrsStateJson:otherMeaning.fsrsStateJson}});});
  await reviews.markStudied(db,u.id,itemId,now);
  const s=await db.studySession.create({data:{userId:u.id,startedAt:now,activeSince:now,selectionSeed:randomUUID(),selectionSnapshotJson:{policyVersion:2,mode:'daily',studyDay:'2026-10-06',entries:[{cardId:reading.id,stateVersion:0,role:'new'}]}}});
- const input={sessionId:s.id,cardId:reading.id,stateVersion:0,clientEventId:randomUUID(),answer:{reading:'し'}};
- await commitResponse(db,u.id,input,now);await rate(db,u.id,{...input,rating:3,components:{correct:true}},now);
+ const input=choiceInput(await sessionView(db,u.id,s.id,now),reading);
+ await commitResponse(db,u.id,input,now);await rate(db,u.id,{...input,rating:3,components:{}},now);
  const logs=await db.reviewLog.count({where:{cardId:reading.id}});assert.equal(logs,1);
  assert.deepEqual(await retireKanjiReadingCards(db,{apply:false}),{found:2,retired:0,apply:false});
  assert.equal((await db.card.findUnique({where:{id:reading.id}})).status,'active');
@@ -663,7 +690,8 @@ test('kanji match answer pairs the hiragana reading with the meaning', {skip:!en
  const card=await db.card.findFirst({where:{userId:u.id,itemId}});
  await db.userItem.upsert({where:{userId_itemId:{userId:u.id,itemId}},create:{userId:u.id,itemId,familiarity:'introduced',introducedAt:now},update:{introducedAt:now}});
  const [candidate]=await matchCandidates(db,u.id,'kanji');
- assert.equal(candidate.prompt,card.promptSpecJson.text);assert.equal(candidate.answer,'し · synthetic meaning');
+ assert.equal(candidate.prompt,card.promptSpecJson.text);
+ assert.equal(candidate.answer,kanjiAnswer(await db.kanji.findUnique({where:{itemId},select:{kunReadingsJson:true,onReadingsJson:true}}),card.answerSpecJson.meaning));
 });
 
 // Final review fixes.

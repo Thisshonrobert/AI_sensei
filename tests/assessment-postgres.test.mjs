@@ -89,7 +89,9 @@ test('submission/self grading flags only failed primary targets and changes no C
  const f=await fixture();await syncCards(db,f.user.id,now);
  const daily=await startSession(db,f.user.id,{now,includeNew:true});let dv=await sessionView(db,f.user.id,daily.id,now);
  await introduce(db,f.user.id,daily.id,dv.card.id,now);dv=await sessionView(db,f.user.id,daily.id,now);
- const recall={sessionId:daily.id,cardId:dv.card.id,stateVersion:dv.card.stateVersion,clientEventId:randomUUID(),answer:{reading:'しけん',meaning:'synthetic sense'}};
+ const card=await db.card.findUnique({where:{id:dv.card.id}});
+ const correct=dv.recall.choices.find(choice=>choice.reading===card.answerSpecJson.reading&&choice.meaning===card.answerSpecJson.meaning);
+ const recall={sessionId:daily.id,cardId:dv.card.id,stateVersion:dv.card.stateVersion,clientEventId:randomUUID(),answer:{choiceId:correct.id,choiceFingerprint:dv.recall.fingerprint}};
  await commitResponse(db,f.user.id,recall,now);await rate(db,f.user.id,{...recall,rating:3,components:{readingCorrect:true,meaningCorrect:true}},now);
  const s=await startAssessment(db,f.user.id,{now});const v=await assessmentView(db,f.user.id,s.id,now);
  const cards=await db.card.findMany({where:{userId:f.user.id},orderBy:{id:'asc'}}),logs=await db.reviewLog.findMany({where:{userId:f.user.id},orderBy:{id:'asc'}});assert.ok(cards.length>0);assert.equal(logs.length,1);

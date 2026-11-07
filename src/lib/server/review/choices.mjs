@@ -1,6 +1,9 @@
 import { glossOverlap, normalizeReading } from './text.mjs';
 
 export const CHOICE_COUNT = 4;
+// A set is worth showing with the correct option plus at least one real decoy; fewer
+// unique options than this stays null (the card is skipped, never asked as typed entry).
+export const MIN_CHOICES = 2;
 
 function hash(value) {
   let h = 2166136261 >>> 0;
@@ -34,7 +37,7 @@ function assemble(seed, format, correct, decoys) {
     const key = pairKey(decoy);
     if (!unique.has(key)) unique.set(key, decoy);
   }
-  if (unique.size !== CHOICE_COUNT) return null;
+  if (unique.size < MIN_CHOICES) return null;
   const choices = shuffled([...unique.values()], `${seed}|order`).map((choice, index) => ({
     id: optionId(seed, index, choice),
     ...(choice.reading ? { reading: choice.reading } : {}),
@@ -197,4 +200,23 @@ export function buildKanjiReadingChoices({ target, candidates, seed }) {
     pool.push(entry);
   }
   return assemble(seed, 'kanji_reading', correct, shuffled(pool, `${seed}|kanji-reading`).slice(0, CHOICE_COUNT - 1));
+}
+
+export function buildGrammarChoices({ target, candidates, seed }) {
+  if (!target?.response?.trim()) return null;
+  const correct = { reading: target.response, tier: 'correct' };
+  const seen = new Set([pairKey(correct)]);
+  const alternatives = new Set((target.alternatives || []).map(value => pairKey({ reading: String(value || '').trim() })));
+  const pool = [];
+  for (const item of candidates || []) {
+    const response = String(item?.response || '').trim();
+    if (!response) continue;
+    const entry = { reading: response, tier: 'unrelated' };
+    const key = pairKey(entry);
+    // Accepted alternatives of the target card are also correct answers, never decoys.
+    if (seen.has(key) || alternatives.has(key)) continue;
+    seen.add(key);
+    pool.push(entry);
+  }
+  return assemble(seed, 'grammar_cloze', correct, shuffled(pool, `${seed}|grammar`).slice(0, CHOICE_COUNT - 1));
 }

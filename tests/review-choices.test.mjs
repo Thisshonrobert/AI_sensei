@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildKanjiMeaningChoices, buildKanjiReadingChoices, buildVocabChoices } from '../src/lib/server/review/choices.mjs';
+import { buildGrammarChoices, buildKanjiMeaningChoices, buildKanjiReadingChoices, buildVocabChoices } from '../src/lib/server/review/choices.mjs';
 
 const target={itemId:'t',writtenForm:'試験',reading:'しけん',meaning:'examination',acceptedGlosses:['exam'],partOfSpeech:'noun'};
 const candidates=[
@@ -29,7 +29,11 @@ test('choice construction is deterministic and never uses the prompt word',()=>{
  assert.deepEqual(first,second);
  assert.equal(first.choices.some(c=>c.meaning===target.writtenForm),false);
  assert.match(first.fingerprint,/^[a-f0-9]{16}$/);
- assert.equal(buildVocabChoices({target,candidates:[candidates[0]],seed:'x'}),null);
+ // Fewer than four unique options is still a valid set when at least one real decoy exists.
+ const thin=buildVocabChoices({target,candidates:[candidates[0]],seed:'x'});
+ assert.ok(thin);assert.equal(thin.choices.length,2);
+ assert.equal(new Set(thin.choices.map(c=>`${c.reading}|${c.meaning}`)).size,2);
+ assert.equal(buildVocabChoices({target,candidates:[],seed:'x'}),null,'no decoy at all means no choice set');
 });
 
 const dictionary=new Map([
@@ -64,7 +68,7 @@ test('kanji meaning options pair an English meaning with a hiragana reading and 
  assert.equal(await buildKanjiMeaningChoices({target:kanjiTarget,candidates:[],seed:'x',lookup,examplesFor}),null);
 });
 
-test('a Japanese source gloss becomes a bilingual option and a missing reading falls back to typed recall',async()=>{
+test('a Japanese source gloss becomes a bilingual option and an unresolvable meaning returns no set',async()=>{
  const target={itemId:'j',glyph:'条',meaning:'条件',meanings:['条件'],onReadings:['じょう'],kunReadings:[]};
  const candidates=[
   {itemId:'t',glyph:'価',meaning:'Value',meanings:['Value'],onReadings:['か'],kunReadings:['あたい']},
@@ -103,4 +107,20 @@ test('a kanji set never mixes a bare kanji reading with word readings',async()=>
  assert.equal(correct.reading,'ためす');
  const bareReadings=new Set(['ためす','し','かく','しょ','よむ','どく','けん','あかす']);
  for(const choice of set.choices)assert.ok(bareReadings.has(choice.reading),`${choice.reading} is not a bare kanji reading`);
+});
+
+test('grammar cloze options are other grammar points forms and never accepted alternatives',()=>{
+ const target={response:'もの',alternatives:['equivalent answer']};
+ const candidates=[{response:'もの'},{response:'もの'},{response:'もの'},{response:'わけ'},{response:'equivalent answer'}];
+ const first=buildGrammarChoices({target,candidates,seed:'g'});
+ assert.ok(first);
+ assert.equal(first.format,'grammar_cloze');
+ // もの duplicates and the card's own accepted alternative are removed, leaving one decoy.
+ assert.equal(first.choices.length,2);
+ assert.equal(new Set(first.choices.map(c=>c.reading)).size,2);
+ const correct=first.choices.find(c=>c.id===first.correctChoiceId);
+ assert.equal(correct.reading,'もの');
+ assert.ok(first.choices.some(c=>c.reading==='わけ'));
+ assert.deepEqual(first,buildGrammarChoices({target,candidates,seed:'g'}));
+ assert.equal(buildGrammarChoices({target:{response:''},candidates,seed:'g'}),null);
 });

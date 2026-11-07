@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { configuration, initialState, schedule, effectiveRating, studyDay, nextStudyDay } from './scheduler.mjs';
 import { hasIdleGap, sessionElapsedMs } from './timing.mjs';
-import { buildKanjiMeaningChoices, buildKanjiReadingChoices, buildVocabChoices } from './choices.mjs';
+import { buildGrammarChoices, buildKanjiMeaningChoices, buildKanjiReadingChoices, buildVocabChoices } from './choices.mjs';
 import { studyContent } from '../content/study.mjs';
 import { isEnglishGloss, isKanjiMeaningSupplement, resolveKanjiMeanings } from '../content/kanji-meanings.mjs';
 import { localDictionary } from '../generation/dictionary.mjs';
@@ -219,7 +219,7 @@ export async function startSession(db,userId,{now=new Date(),reviewMore=false}={
  });
 }
 async function ownedSession(tx,userId,id){const s=await tx.studySession.findFirst({where:{id,userId,mode:'daily'}});if(!s)throw new ReviewError('Session ownership mismatch',403);return s;}
-const choiceObjectives=new Set(['vocab_reading_meaning','kanji_meaning','kanji_reading_context']);
+const choiceObjectives=new Set(['vocab_reading_meaning','kanji_meaning','kanji_reading_context','grammar_cloze']);
 function feedbackComponents(feedback) {
  const result={};
  for(const key of ['correct','readingCorrect','meaningCorrect'])if(typeof feedback?.[key]==='boolean')result[key]=feedback[key];
@@ -269,13 +269,26 @@ async function recallChoices(tx,user,card,session) {
    },
   });
  }
- const rows=await tx.card.findMany({
-  where:{userId:user.id,objective:'kanji_reading_context',status:{in:['new','active']},itemId:{not:card.itemId}},
-  select:{itemId:true,answerSpecJson:true},take:240,orderBy:{id:'asc'},
+ if(card.objective==='kanji_reading_context') {
+  const rows=await tx.card.findMany({
+   where:{userId:user.id,objective:'kanji_reading_context',status:{in:['new','active']},itemId:{not:card.itemId}},
+   select:{itemId:true,answerSpecJson:true},take:240,orderBy:{id:'asc'},
+  });
+  return buildKanjiReadingChoices({
+   target:{itemId:card.itemId,reading:card.answerSpecJson.reading},
+   candidates:rows.map(row=>({itemId:row.itemId,reading:row.answerSpecJson?.reading})),
+   seed,
+  });
+ }
+ // The cloze options are acceptable answer forms of the learner's other grammar cards. The
+ // target's own accepted alternatives would also be correct, so the builder removes those.
+ const grammarRows=await tx.card.findMany({
+  where:{userId:user.id,objective:'grammar_cloze',status:{in:['new','active']},itemId:{not:card.itemId},item:{status:'approved'}},
+  select:{answerSpecJson:true},take:240,orderBy:{id:'asc'},
  });
- return buildKanjiReadingChoices({
-  target:{itemId:card.itemId,reading:card.answerSpecJson.reading},
-  candidates:rows.map(row=>({itemId:row.itemId,reading:row.answerSpecJson?.reading})),
+ return buildGrammarChoices({
+  target:{response:card.answerSpecJson.response,alternatives:strings(card.answerSpecJson.alternatives)},
+  candidates:grammarRows.map(row=>({response:row.answerSpecJson?.response})),
   seed,
  });
 }
@@ -299,20 +312,27 @@ async function viewInTransaction(tx,user,session,now,{choices=false}={}) {
  const completed=await tx.attempt.findMany({where:{sessionId:session.id,userId:user.id,reviewLogId:{not:null}},select:{cardId:true},take:800});
  const reviewed=reviewedCounts(completed),seen=new Map();
  const used=await answeredToday(tx,user,now),caps=userCaps(user);
- let card=null,attempt=null,deferred=0,done=0,role;
+ let card=null,attempt=null,choiceSet=null,optionGaps=0,deferred=0,done=0,role;
  for(const e of entries) {
   const k=(seen.get(e.cardId)||0)+1;seen.set(e.cardId,k);
   if((reviewed.get(e.cardId)||0)>=k){done++;continue;}
   const c=await tx.card.findFirst({where:{id:e.cardId,userId:user.id,...eligible(now),status:{in:['new','active']}}});
   if(!c||c.stateVersion!==e.stateVersion){deferred++;continue;}
-  if(!card){card=c;role=e.role;attempt=await tx.attempt.findFirst({where:{sessionId:session.id,userId:user.id,cardId:c.id,reviewLogId:null}});}
+  if(card)continue;
+  const pending=await tx.attempt.findFirst({where:{sessionId:session.id,userId:user.id,cardId:c.id,reviewLogId:null}});
+  if(pending){card=c;role=e.role;attempt=pending;continue;}
+  // Typed entry is retired (A8): a card whose choice builders cannot assemble an option set from
+  // current library data is skipped and reported as a gap instead of falling back to free text.
+  if(!choices||!choiceObjectives.has(c.objective)||!c.answerSpecJson){card=c;role=e.role;continue;}
+  const set=await recallChoices(tx,user,c,session);
+  if(!set){optionGaps++;continue;}
+  card=c;role=e.role;choiceSet=set;
  }
  const due=await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},item:{status:'approved'}}});
  const actionableDue=await tx.card.count({where:{userId:user.id,status:'active',dueAt:{lte:now},...eligible(now)}});
  const repair=card?await tx.reviewLog.count({where:{userId:user.id,cardId:card.id,rating:1,reviewedAt:{gte:new Date(now.getTime()-30*86400000)}}}):0;
   const duration=sessionElapsedMs(session,now);
-  const choiceSet=choices&&card&&!attempt&&(card.status==='active'||card.status==='new')?await recallChoices(tx,user,card,session):null;
-  return {sessionId:session.id,status:session.status,completed:done,total:entries.length,deferred,due,actionableDue,buriedDue:due-actionableDue,elapsedActiveMs:duration,idleTooLong:hasIdleGap(session,now),timeBudgetMinutes:session.timeBudgetMinutes,timeBudgetReached:duration>=session.timeBudgetMinutes*60000,used,limits:caps,repairSuggested:repair>=5,
+  return {sessionId:session.id,status:session.status,completed:done,total:entries.length,deferred,optionGaps,due,actionableDue,buriedDue:due-actionableDue,elapsedActiveMs:duration,idleTooLong:hasIdleGap(session,now),timeBudgetMinutes:session.timeBudgetMinutes,timeBudgetReached:duration>=session.timeBudgetMinutes*60000,used,limits:caps,repairSuggested:repair>=5,
    card:card?{id:card.id,itemId:card.itemId,objective:card.objective,status:card.status,stateVersion:card.stateVersion,role,prompt:card.promptSpecJson}:null,
    recall:choiceSet?{format:choiceSet.format,fingerprint:choiceSet.fingerprint,choices:choiceSet.choices.map(({id,reading,meaning})=>({id,...(reading?{reading}:{}),...(meaning?{meaning}:{})}))}:null,
    ...(attempt?{
@@ -335,8 +355,10 @@ async function pendingLedger(tx,user,session,now) {
   if((reviewed.get(e.cardId)||0)>=k)continue;
   const c=await tx.card.findFirst({where:{id:e.cardId,userId:user.id,...eligible(now),status:{in:['new','active']}}});
   if(!c||c.stateVersion!==e.stateVersion)continue;
-  card=card||c; // first non-completed, still-eligible entry in selection order
-  if(card)break;
+  // Same gap rule as the view: a fresh card with no buildable option set is skipped, not served.
+  if(choiceObjectives.has(c.objective)&&c.answerSpecJson&&!await tx.attempt.findFirst({where:{sessionId:session.id,userId:user.id,cardId:c.id,reviewLogId:null},select:{id:true}})&&!await recallChoices(tx,user,c,session))continue;
+  card=c; // first non-completed, still-eligible entry in selection order
+  break;
  }
  return {card,entries};
 }
@@ -401,22 +423,17 @@ export async function commitResponse(db,userId,input,now=new Date()) {
   const card=await activateCard(tx,user,await selectedCard(tx,user,data.sessionId,data.cardId,data.stateVersion,now),now);
   const prior=await tx.attempt.findFirst({where:{userId,sessionId:data.sessionId,cardId:data.cardId,reviewLogId:null}});
   if(prior)throw new ReviewError('A response is already committed; resume it');
-  const choices=data.answer.choiceId?await recallChoices(tx,user,card,session):null;
-  if(data.answer.choiceId&&!data.answer.choiceFingerprint)throw new ReviewError('Choice fingerprint required',400);
-  let answerJson=data.answer,feedback={},grader='self';
-  if(data.answer.choiceId) {
-   if(!choices)throw new ReviewError('Choice response unavailable; reload the card');
-   if(data.answer.choiceFingerprint!==choices.fingerprint)throw new ReviewError('Choices changed; reload the card');
-   const choice=choices.choices.find(item=>item.id===data.answer.choiceId);
-   if(!choice)throw new ReviewError('Selected choice was not offered; reload the card');
-   answerJson={choiceId:choice.id,choiceFingerprint:choices.fingerprint};
-   feedback={choiceId:choice.id,...gradeChoice(card,choice,choices.correctChoiceId)};
-   grader='objective';
-  } else {
-   const required=card.objective==='vocab_reading_meaning'?['reading','meaning']:card.objective==='kanji_meaning'?['meaning']:card.objective==='kanji_reading_context'?['reading']:['response'];
-   if(required.some(k=>typeof data.answer[k]!=='string'||!data.answer[k].trim()))throw new ReviewError('Commit each required response, or write “forgot”',400);
-   feedback=card.answerSpecJson.reading?{normalizedReading:normalizeReading(data.answer.reading),readingMatch:normalizeReading(data.answer.reading)===normalizeReading(card.answerSpecJson.reading)}:{};
-  }
+  // A8: typed entry is retired. Every committed answer selects an offered option that the
+  // server re-derives and grades; a card whose option set cannot be rebuilt is not answerable.
+  if(!data.answer.choiceId||!data.answer.choiceFingerprint)throw new ReviewError('Select one of the offered choices',400);
+  const choices=await recallChoices(tx,user,card,session);
+  if(!choices)throw new ReviewError('Choice response unavailable; reload the card');
+  if(data.answer.choiceFingerprint!==choices.fingerprint)throw new ReviewError('Choices changed; reload the card');
+  const choice=choices.choices.find(item=>item.id===data.answer.choiceId);
+  if(!choice)throw new ReviewError('Selected choice was not offered; reload the card');
+  const answerJson={choiceId:choice.id,choiceFingerprint:choices.fingerprint};
+  const feedback={choiceId:choice.id,...gradeChoice(card,choice,choices.correctChoiceId)};
+  const grader='objective';
   await tx.attempt.create({data:{userId,sessionId:data.sessionId,cardId:card.id,contentId:card.contentId,primaryTargetItemId:card.itemId,clientEventId:data.clientEventId,promptSnapshotJson:{prompt:card.promptSpecJson,answer:card.answerSpecJson,stateVersion:card.stateVersion,templateVersion:card.templateVersion,...(choices?{choiceFormat:choices.format,choices:choices.choices,correctChoiceId:choices.correctChoiceId}:{})},answerJson,feedbackJson:feedback,grader,startedAt:now,submittedAt:now,revealedAt:now}});
   // The refreshed view rides on this response so the client never needs a second round trip.
   return {clientEventId:data.clientEventId,answer:card.answerSpecJson,readingMatch:feedback.readingMatch,grader,view:await viewInTransaction(tx,user,session,now,{choices:true})};

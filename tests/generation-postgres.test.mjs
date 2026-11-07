@@ -56,12 +56,17 @@ test('reading completion is owned, explicit, durable and idempotent without reca
   {userId:f.user.id,mode:'practice',status:'completed',endedAt:at,selectionSeed:'synthetic',selectionSnapshotJson:{passages:[{id:randomUUID()}]}},
   {userId:f.user.id,mode:'practice',status:'completed',endedAt:at,selectionSeed:'synthetic',selectionSnapshotJson:{kind:'lesson_exercises'}},
  ]});
+ // Multiple choice needs a decoy: one extra unstudied word with a different meaning.
+ {const id=randomUUID(),e=randomUUID(),sourceId=randomUUID(),typed={writtenForm:'寝る',reading:'ねる',partOfSpeech:'verb',senseKey:id,meaningEn:'sleep',acceptedGlossesJson:[],alternativeFormsJson:[],usageJson:{}},fieldOriginsJson=Object.fromEntries(Object.keys(typed).map(k=>[k,e]));
+  await db.$transaction(async tx=>{await tx.source.create({data:{id:sourceId,title:'Synthetic decoy source',sourceType:'book',language:'ja'}});await tx.item.create({data:{id,kind:'vocabulary',canonicalKey:id,status:'approved',revision:1,fieldOriginsJson}});await tx.vocabulary.create({data:{itemId:id,...typed}});await tx.sourceEntry.create({data:{id:e,itemId:id,sourceId,sourceRecordKey:id,revision:1,originalPayloadJson:{synthetic:true},fieldPresenceJson:{},verificationStatus:'verified',verifiedAt:new Date()}});await tx.itemRevision.create({data:{itemId:id,revision:1,typedJson:typed,fieldOriginsJson}});});}
  await review.syncCards(db,f.user.id);
  const session=await review.startSession(db,f.user.id,{includeNew:true});
  let card=(await review.sessionView(db,f.user.id,session.id)).card;
  await review.introduce(db,f.user.id,session.id,card.id);
  card=(await review.sessionView(db,f.user.id,session.id)).card;
- const response={sessionId:session.id,cardId:card.id,stateVersion:card.stateVersion,clientEventId:randomUUID(),answer:{reading:'たべる',meaning:'eat'}};
+ const response={sessionId:session.id,cardId:card.id,stateVersion:card.stateVersion,clientEventId:randomUUID()};
+ const view=await review.sessionView(db,f.user.id,session.id),stored=await db.card.findUnique({where:{id:card.id}});
+ response.answer={choiceId:view.recall.choices.find(c=>c.reading===stored.answerSpecJson.reading&&c.meaning===stored.answerSpecJson.meaning).id,choiceFingerprint:view.recall.fingerprint};
  await review.commitResponse(db,f.user.id,response);
  await review.rate(db,f.user.id,{...response,rating:1,components:{readingCorrect:false,meaningCorrect:false}});
  const aggregate=await review.dashboard(db,f.user.id);

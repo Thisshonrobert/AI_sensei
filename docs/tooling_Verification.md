@@ -18,6 +18,7 @@ rtk proxy node scripts/repair-kanji-meaning-cards.mjs --apply
 
 - Unit suites 18/18 (kanji-meanings resolver flags, choices, scheduler); `test:review` 41/41 including two new tests: "Japanese-only kanji wording stays excluded until an approved English gloss exists" and "repair retires stale Japanese-meaning cards and recreation stores the approved gloss"; full `bun run test` 153 pass / 0 fail (77 PostgreSQL-gated skips); lint and typecheck clean.
 - Local database (Docker mirror of Neon prod): dry run found 182 `kanji_meaning` candidates, 31 stale (all status `new`, e.g. 臓→内臓, 脳→頭にある臓器); `--apply` retired 31 and recreated 31 with the approved English glosses (臓→"internal organs", 脳→"brain", …), `stillExcluded` 0; a re-run found 0 stale (idempotent). Retired rows keep their original answers as evidence history; spot check showed 臓 v1 retired (`内臓`) and v2 `new` (`internal organs`).
+- Neon prod, applied after the deploy commit was pushed: dry run found 200 candidates with the same 31 stale glyphs; `--neon --apply` retired 31 and recreated 31, `stillExcluded` 0; re-run found 0 stale; spot check on Neon showed 臓 v1 retired (`内臓`) and v2 `new` (`internal organs`).
 
 ## Sprint daily recall and match practice — 26 October 2026
 
@@ -265,3 +266,4 @@ Framework setup follows the official [Next.js installation](https://nextjs.org/d
 ### Lesson exercise checks — 9 October 2026
 
 `rtk bun run test:lesson-exercises:postgres` runs focused checks in an isolated synthetic PostgreSQL database. After a production build, `rtk bun run test:lesson-exercises:browser` also starts a separate dynamic-port production server and checks commitment/reveal, refresh, answer redaction, cross-origin rejection and mobile wrapping. Neither runner changes the real learner library. See [batch handoff](batch-readiness-handoff.md) for actual results and content gates.
+- 7 November 2026, A8 choice-only recall: `test:review` 41/41, `test` 154/154, `test:assessment` 10/10, `test:generation` 12/12, `lint`, `typecheck`, `build` clean; `test:review:browser` 8 passed, 1 failed in `browse.spec.ts` (kanji meaning highlight, not touched by this change).

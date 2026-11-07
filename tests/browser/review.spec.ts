@@ -111,7 +111,8 @@ test('new card opens the recall choice first, then reveal, rating and an optiona
   for(let i=0;i<60;i++){
    const view=await call();if(!view?.card)return null;if(view.card.role==='again')return view.card.id as string;
    const base={sessionId:view.sessionId,cardId:view.card.id,stateVersion:view.card.stateVersion,clientEventId:crypto.randomUUID()};
-   const answer=view.recall?{choiceId:view.recall.choices[0].id,choiceFingerprint:view.recall.fingerprint}:{reading:'forgot',meaning:'forgot',response:'forgot'};
+   if(!view.recall)throw new Error('No choices: '+JSON.stringify({o:view.card.objective,r:view.card.role,a:!!view.attempt,g:view.optionGaps}));
+   const answer={choiceId:view.recall.choices[0].id,choiceFingerprint:view.recall.fingerprint};
    await call({action:'respond',...base,answer});await call({action:'rate',...base,answer,rating:1,components:{readingCorrect:false,meaningCorrect:false,correct:false}});
   }
   return null;
@@ -177,11 +178,22 @@ test('match round: tap word then meaning, one deliberate miss adds a second, thi
    let view=await call();
    if(!view?.card)view=await call({action:'start'});
    if(!view?.card)break;
-   const base={sessionId:view.sessionId,cardId:view.card.id,stateVersion:view.card.stateVersion,clientEventId:crypto.randomUUID()};
-   const answer={reading:'synthetic',meaning:'synthetic'};
-   if(view.attempt)Object.assign(base,{clientEventId:view.attempt.clientEventId});else await call({action:'respond',...base,answer});
-   const rated=await call({action:'rate',...base,answer:view.attempt?.answer||answer,rating:4,components:{readingCorrect:true,meaningCorrect:true,correct:true}});
-   if(rated.rating===4)done++;
+   let base={sessionId:view.sessionId,cardId:view.card.id,stateVersion:view.card.stateVersion,clientEventId:crypto.randomUUID()};
+   let answer:unknown;
+   if(view.attempt){Object.assign(base,{clientEventId:view.attempt.clientEventId});answer=view.attempt.answer;}
+   else{
+    let intro:{answer:{reading:string;meaning:string}}|null=null;
+    if(view.card.role==='new'){
+     intro=await (await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'introduce',sessionId:view.sessionId,cardId:view.card.id})})).json();
+     view=await call();base={sessionId:view.sessionId,cardId:view.card.id,stateVersion:view.card.stateVersion,clientEventId:crypto.randomUUID()};
+    }
+    if(!view.recall)throw new Error('No choices: '+JSON.stringify({o:view.card.objective,r:view.card.role,a:!!view.attempt,g:view.optionGaps}));
+    const pick=(intro&&view.recall.choices.find((c:{reading?:string;meaning?:string})=>c.reading===intro.answer.reading&&c.meaning===intro.answer.meaning))||view.recall.choices[0];
+    answer={choiceId:pick.id,choiceFingerprint:view.recall.fingerprint};
+    await call({action:'respond',...base,answer});
+   }
+   const rated=await call({action:'rate',...base,answer,rating:3,components:{readingCorrect:true,meaningCorrect:true,correct:true}});
+   if(rated.rating>=3)done++;
   }
   return done;
  });
