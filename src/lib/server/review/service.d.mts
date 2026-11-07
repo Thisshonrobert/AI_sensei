@@ -20,8 +20,8 @@ export function startSession(db:PrismaClient,userId:string,options?:{now?:Date;r
 export function sessionView(db:PrismaClient,userId:string,id:string,now?:Date):Promise<SessionView>;
 export function resumeSession(db:PrismaClient,userId:string,id:string,now?:Date):Promise<SessionView>;
 export function introduce(db:PrismaClient,userId:string,sessionId:string,cardId:string,now?:Date):Promise<{answer:Answer;study:StudyContent|null}>;
-export function commitResponse(db:PrismaClient,userId:string,input:ResponseInput,now?:Date):Promise<{clientEventId:string;answer:Answer;readingMatch?:boolean;grader:string}>;
-export function rate(db:PrismaClient,userId:string,input:ResponseInput & {rating:number;components?:Record<string,boolean>},now?:Date):Promise<{reviewLogId:string;cardId:string;rating:number;stateVersion:number;dueAt:string}>;
+export function commitResponse(db:PrismaClient,userId:string,input:ResponseInput,now?:Date):Promise<{clientEventId:string;answer:Answer;readingMatch?:boolean;grader:string;view:SessionView}>;
+export function rate(db:PrismaClient,userId:string,input:ResponseInput & {rating:number;components?:Record<string,boolean>},now?:Date):Promise<{reviewLogId:string;cardId:string;rating:number;stateVersion:number;dueAt:string;view:SessionView}>;
 export function stopSession(db:PrismaClient,userId:string,id:string,now?:Date):Promise<{savedAt:string}>;
 export function dashboard(db:PrismaClient,userId?:string,now?:Date):Promise<Dashboard>;
 export function updateBudget(db:PrismaClient,userId:string,minutes:number):Promise<{timeBudgetMinutes:number}>;

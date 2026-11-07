@@ -46,8 +46,8 @@ export function Review({initialStart}:{initialStart?:string}){
   const committed=view.attempt?.answer||(view.recall&&choiceId?{choiceId,choiceFingerprint:view.recall.fingerprint}:answer);
   return {sessionId:view.sessionId,cardId:card.id,stateVersion:card.stateVersion,clientEventId:event.current,answer:committed};
  }
- function submit(){return work(async()=>{const payload=response();await call({action:'respond',...payload});replace(await call<SessionView>());setMessage('Response committed.');});}
- function rate(rating:number){return work(async()=>{const objectiveAttempt=view?.attempt?.grader==='objective';const result=await call<{rating:number}>({action:'rate',...response(),rating,components:objectiveAttempt?{}:vocab?{readingCorrect:!!components.readingCorrect,meaningCorrect:!!components.meaningCorrect}:{correct:!!components.correct}});replace(await call<SessionView>());setMessage(`Saved · ${['','Again','Hard','Good','Easy'][result.rating]}`);});}
+ function submit(){return work(async()=>{const payload=response();const result=await call<{view:SessionView}>({action:'respond',...payload});replace(result.view);setMessage('Response committed.');});}
+ function rate(rating:number){return work(async()=>{const objectiveAttempt=view?.attempt?.grader==='objective';const result=await call<{rating:number;view:SessionView}>({action:'rate',...response(),rating,components:objectiveAttempt?{}:vocab?{readingCorrect:!!components.readingCorrect,meaningCorrect:!!components.meaningCorrect}:{correct:!!components.correct}});replace(result.view);setMessage(`Saved · ${['','Again','Hard','Good','Easy'][result.rating]}`);});}
  if(loading)return <p role="status">Loading saved session…</p>;
  const paused=view?.status==='paused';
  const activeMs=(view?.elapsedActiveMs||0)+(view?.idleTooLong?0:tick*1000);

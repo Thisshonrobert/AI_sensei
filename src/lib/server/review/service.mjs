@@ -243,12 +243,16 @@ async function sessionEntries(tx,session) {
  const again=[...first.values()].filter(l=>l.rating===1&&listed.has(l.cardId)).map(l=>({cardId:l.cardId,stateVersion:l.cardAfterJson.stateVersion,role:'again'}));
  return [...entries,...again];
 }
+// A card may appear twice (an Again repeat): its k-th entry is done once the session holds k committed reviews of it.
+function reviewedCounts(attempts) {
+ const reviewed=new Map();
+ for(const a of attempts)reviewed.set(a.cardId,(reviewed.get(a.cardId)||0)+1);
+ return reviewed;
+}
 async function viewInTransaction(tx,user,session,now,{choices=false}={}) {
  const entries=await sessionEntries(tx,session);
  const completed=await tx.attempt.findMany({where:{sessionId:session.id,userId:user.id,reviewLogId:{not:null}},select:{cardId:true},take:800});
- // A card may appear twice (an Again repeat): its k-th entry is done once the session holds k reviews of it.
- const reviewed=new Map(),seen=new Map();
- for(const a of completed)reviewed.set(a.cardId,(reviewed.get(a.cardId)||0)+1);
+ const reviewed=reviewedCounts(completed),seen=new Map();
  const used=await answeredToday(tx,user,now),caps=userCaps(user);
  let card=null,attempt=null,deferred=0,done=0,role;
  for(const e of entries) {
@@ -274,6 +278,23 @@ async function viewInTransaction(tx,user,session,now,{choices=false}={}) {
   };
 }
 export async function sessionView(db,userId,id,now=new Date()) {return locked(db,userId,async(tx,user)=>viewInTransaction(tx,user,await ownedSession(tx,userId,id),now,{choices:true}));}
+// Lean current-card gate for the response/commit checks: same entry order and completion rules as
+// the full view, but without cap usage, due counts or study content (only the view needs those).
+// Also returns the merged entry ledger so callers can resolve a card's own entry without re-scanning.
+async function pendingLedger(tx,user,session,now) {
+ const reviewed=reviewedCounts(await tx.attempt.findMany({where:{sessionId:session.id,userId:user.id,reviewLogId:{not:null}},select:{cardId:true},take:800}));
+ const entries=await sessionEntries(tx,session);
+ const seen=new Map();let card=null;
+ for(const e of entries) {
+  const k=(seen.get(e.cardId)||0)+1;seen.set(e.cardId,k);
+  if((reviewed.get(e.cardId)||0)>=k)continue;
+  const c=await tx.card.findFirst({where:{id:e.cardId,userId:user.id,...eligible(now),status:{in:['new','active']}}});
+  if(!c||c.stateVersion!==e.stateVersion)continue;
+  card=card||c; // first non-completed, still-eligible entry in selection order
+  if(card)break;
+ }
+ return {card,entries};
+}
 export async function resumeSession(db,userId,id,now=new Date()) {
  return locked(db,userId,async(tx,user)=>{
   const session=await ownedSession(tx,userId,id);
@@ -285,16 +306,15 @@ export async function resumeSession(db,userId,id,now=new Date()) {
 async function selectedCard(tx,user,sessionId,cardId,stateVersion,now) {
  const s=await ownedSession(tx,user.id,sessionId);
  if(s.status!=='active')throw new ReviewError('Resume the session first');
- const entries=await sessionEntries(tx,s);
- const entry=entries.find(e=>e.cardId===cardId&&e.stateVersion===stateVersion)||entries.find(e=>e.cardId===cardId);
+ const ledger=await pendingLedger(tx,user,s,now);
+ const entry=ledger.entries.find(e=>e.cardId===cardId&&e.stateVersion===stateVersion)||ledger.entries.find(e=>e.cardId===cardId);
  const c=await tx.card.findFirst({where:{id:cardId,userId:user.id}});
  if(!c||!entry)throw new ReviewError('Card ownership or selection mismatch',403);
  if(c.stateVersion!==stateVersion||entry.stateVersion!==stateVersion)throw new ReviewError('Stale card state; reload the session');
  if(!['new','active'].includes(c.status)||(c.buriedUntil&&c.buriedUntil>now)||c.itemId==null)throw new ReviewError('Card is not eligible');
  const item=await tx.item.findUnique({where:{id:c.itemId}});
  if(item.status!=='approved')throw new ReviewError('Content is no longer eligible');
- const view=await viewInTransaction(tx,user,s,now);
- if(view.card?.id!==c.id)throw new ReviewError('Finish the current due card first');
+ if(ledger.card?.id!==c.id)throw new ReviewError('Finish the current due card first');
  return c;
 }
 async function activateCard(tx,user,card,now) {
@@ -331,11 +351,11 @@ export async function commitResponse(db,userId,input,now=new Date()) {
  const data=responseSchema.parse(input);
  return locked(db,userId,async(tx,user)=>{
   const previous=await tx.attempt.findUnique({where:{userId_clientEventId:{userId,clientEventId:data.clientEventId}}});
-  if(previous){if(previous.cardId!==data.cardId||previous.sessionId!==data.sessionId||previous.promptSnapshotJson.stateVersion!==data.stateVersion||!isDeepStrictEqual(previous.answerJson,data.answer))throw new ReviewError('Event ID already used with another response');return {clientEventId:previous.clientEventId,answer:previous.promptSnapshotJson.answer,readingMatch:previous.feedbackJson.readingMatch,grader:previous.grader};}
+  const session=await ownedSession(tx,user.id,data.sessionId);
+  if(previous){if(previous.cardId!==data.cardId||previous.sessionId!==data.sessionId||previous.promptSnapshotJson.stateVersion!==data.stateVersion||!isDeepStrictEqual(previous.answerJson,data.answer))throw new ReviewError('Event ID already used with another response');return {clientEventId:previous.clientEventId,answer:previous.promptSnapshotJson.answer,readingMatch:previous.feedbackJson.readingMatch,grader:previous.grader,view:await viewInTransaction(tx,user,session,now,{choices:true})};}
   const card=await activateCard(tx,user,await selectedCard(tx,user,data.sessionId,data.cardId,data.stateVersion,now),now);
   const prior=await tx.attempt.findFirst({where:{userId,sessionId:data.sessionId,cardId:data.cardId,reviewLogId:null}});
   if(prior)throw new ReviewError('A response is already committed; resume it');
-  const session=await ownedSession(tx,user.id,data.sessionId);
   const choices=data.answer.choiceId?await recallChoices(tx,user,card,session):null;
   if(data.answer.choiceId&&!data.answer.choiceFingerprint)throw new ReviewError('Choice fingerprint required',400);
   let answerJson=data.answer,feedback={},grader='self';
@@ -353,15 +373,17 @@ export async function commitResponse(db,userId,input,now=new Date()) {
    feedback=card.answerSpecJson.reading?{normalizedReading:normalizeReading(data.answer.reading),readingMatch:normalizeReading(data.answer.reading)===normalizeReading(card.answerSpecJson.reading)}:{};
   }
   await tx.attempt.create({data:{userId,sessionId:data.sessionId,cardId:card.id,contentId:card.contentId,primaryTargetItemId:card.itemId,clientEventId:data.clientEventId,promptSnapshotJson:{prompt:card.promptSpecJson,answer:card.answerSpecJson,stateVersion:card.stateVersion,templateVersion:card.templateVersion,...(choices?{choiceFormat:choices.format,choices:choices.choices,correctChoiceId:choices.correctChoiceId}:{})},answerJson,feedbackJson:feedback,grader,startedAt:now,submittedAt:now,revealedAt:now}});
-  return {clientEventId:data.clientEventId,answer:card.answerSpecJson,readingMatch:feedback.readingMatch,grader};
+  // The refreshed view rides on this response so the client never needs a second round trip.
+  return {clientEventId:data.clientEventId,answer:card.answerSpecJson,readingMatch:feedback.readingMatch,grader,view:await viewInTransaction(tx,user,session,now,{choices:true})};
  });
 }
 const receipt=log=>({reviewLogId:log.id,cardId:log.cardId,rating:log.rating,stateVersion:log.cardAfterJson.stateVersion,dueAt:log.cardAfterJson.dueAt});
 export async function rate(db,userId,input,now=new Date()) {
  const data=ratingSchema.parse(input);
  return locked(db,userId,async(tx,user)=>{
+  const session=await ownedSession(tx,user.id,data.sessionId);
   const prior=await tx.reviewLog.findUnique({where:{userId_clientEventId:{userId,clientEventId:data.clientEventId}}});
-  if(prior){if(prior.cardId!==data.cardId||prior.sessionId!==data.sessionId||prior.cardBeforeJson.stateVersion!==data.stateVersion)throw new ReviewError('Event ID already used by another review');return receipt(prior);}
+  if(prior){if(prior.cardId!==data.cardId||prior.sessionId!==data.sessionId||prior.cardBeforeJson.stateVersion!==data.stateVersion)throw new ReviewError('Event ID already used by another review');return {...receipt(prior),view:await viewInTransaction(tx,user,session,now,{choices:true})};}
   const card=await selectedCard(tx,user,data.sessionId,data.cardId,data.stateVersion,now);
   const attempt=await tx.attempt.findUnique({where:{userId_clientEventId:{userId,clientEventId:data.clientEventId}}});
   if(!attempt||attempt.cardId!==data.cardId||attempt.sessionId!==data.sessionId)throw new ReviewError('Commit and reveal the response first');
@@ -377,7 +399,7 @@ export async function rate(db,userId,input,now=new Date()) {
   const success=card.objective==='vocab_reading_meaning'?components.readingCorrect&&components.meaningCorrect:components.correct;
   await tx.attempt.update({where:{id:attempt.id},data:{outcome:success?'correct':card.objective==='vocab_reading_meaning'&&(components.readingCorrect||components.meaningCorrect)?'partial':'incorrect',feedbackJson:{...attempt.feedbackJson,...components,requestedRating:data.rating,effectiveRating:rating},reviewLogId:log.id}});
   await bury(tx,card,user,now);
-  return receipt(log);
+  return {...receipt(log),view:await viewInTransaction(tx,user,session,now,{choices:true})};
  });
 }
 export async function stopSession(db,userId,id,now=new Date()){return locked(db,userId,async tx=>{const s=await ownedSession(tx,userId,id);if(s.status==='completed')throw new ReviewError('Session is completed');if(s.status==='active')await tx.studySession.update({where:{id},data:{status:'paused',elapsedActiveMs:sessionElapsedMs(s,now),activeSince:null}});return {savedAt:now.toISOString()};});}
