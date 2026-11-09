@@ -17,6 +17,6 @@ export function FlashcardFacts({item}:{item:DetailItem}) {
     {item.kanji && <><p data-kanji-meanings data-meaning-source={meanings.source}>{meanings.text || <span className="muted">Not supplied</span>}</p><dl className="facts">
       {selected && text(selected.reading) && <Fact label={`Reading in ${text(selected.japanese)}`} value={text(selected.reading)}/>}
       <Fact label="On’yomi" value={text(item.kanji.onReadingsJson)}/><Fact label="Kun’yomi" value={text(item.kanji.kunReadingsJson)}/>
-    </dl>{words.map(content=>{const p=object(content.payloadJson),supplement=exampleMeaning(content,item.contentLinks.map(link=>link.content));const meaning=text(p.translation)||text(p.meanings)||text(supplement && object(supplement.payloadJson).selectedMeanings);return <div className="browse-example" key={content.id}><p className="japanese" lang="ja">{text(p.japanese)}{text(p.reading) && `（${text(p.reading)}）`}</p>{meaning && <p>{meaning}</p>}</div>;})}</>}
+    </dl>{words.map(content=>{const p=object(content.payloadJson),supplement=exampleMeaning(content,item.contentLinks.map(link=>link.content));const meaning=text(p.translation)||text(p.meanings)||text(supplement && object(supplement.payloadJson).selectedMeanings)||item.exampleMeanings[`${text(p.japanese)}\u0000${text(p.reading)}`]||'';return <div className="browse-example" key={content.id}><p className="japanese" lang="ja">{text(p.japanese)}{text(p.reading) && `（${text(p.reading)}）`}</p>{meaning && <p data-example-meaning>{meaning}</p>}</div>;})}</>}
   </>;
 }

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { db } from '../db';
 import { type Kind, pageInput } from './catalog-input';
 import { resolveKanjiMeanings } from './kanji-meanings.mjs';
+import { vocabularyComponentAid } from './vocabulary-components.mjs';
 
 export const sourceSelect = { id: true, title: true, edition: true, sourceType: true, language: true } satisfies Prisma.SourceSelect;
 // Only the linked record is included, never a book, batch or raw source payload.
@@ -44,6 +45,45 @@ export async function listItems(kind: Kind, input: {page?: string; query?: strin
   const contextCount=kind==='vocabulary'?await db.item.count({where:{...where,sourceEntries:{some:{curriculumRole:'context_reference',successor:null}}}}):0;
   return { items, count, contextCount, ...paging };
 }
+const jsonText = (value: Prisma.JsonValue | undefined) => typeof value === 'string' ? value.trim() : '';
+const wordKey = (writtenForm: string, reading: string) => `${writtenForm}\u0000${reading}`;
+// A kanji card's example words reuse an approved vocabulary record with the same written form
+// and reading for their English meaning. Missing book glosses stay missing; nothing is invented.
+async function exampleWordMeanings(contents: CatalogContent[]) {
+  const words = [...new Map(contents
+    .filter(content => content.kind === 'sentence' && content.status === 'approved')
+    .map(content => content.payloadJson && typeof content.payloadJson === 'object' && !Array.isArray(content.payloadJson) ? content.payloadJson as Prisma.JsonObject : {})
+    .filter(payload => payload.sourceWord === true)
+    .map(payload => ({ writtenForm: jsonText(payload.japanese), reading: jsonText(payload.reading) }))
+    .filter(word => word.writtenForm && word.reading)
+    .map(word => [wordKey(word.writtenForm, word.reading), word])).values()];
+  if (!words.length) return {};
+  const rows = await db.vocabulary.findMany({
+    where: { item: { status: 'approved' }, OR: words.map(({ writtenForm, reading }) => ({ writtenForm, reading })) },
+    select: {
+      writtenForm: true, reading: true, meaningEn: true,
+      item: { select: { revision: true, contentLinks: {
+        where: { content: { status: 'approved', successor: null, kind: 'explanation' } },
+        select: { content: { select: { id: true, kind: true, origin: true, status: true, revision: true, createdAt: true, successor: { select: { id: true } }, payloadJson: true } } },
+      } } },
+    },
+    take: 20,
+  });
+  const found = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const rowContents = row.item.contentLinks.map(link => link.content);
+    let meaning = resolveKanjiMeanings(rowContents, row.meaningEn).text;
+    if (!meaning) {
+      const aid = vocabularyComponentAid({ revision: row.item.revision, vocabulary: { writtenForm: row.writtenForm, reading: row.reading } }, rowContents);
+      meaning = [...new Set((aid?.components ?? []).flatMap(component => component.meanings))].join(' · ');
+    }
+    if (!meaning) continue;
+    const key = wordKey(row.writtenForm, row.reading);
+    found.set(key, (found.get(key) ?? new Set()).add(meaning));
+  }
+  // Competing senses would make an arbitrary pick; show only unambiguous meanings.
+  return Object.fromEntries([...found].filter(([, meanings]) => meanings.size === 1).map(([key, meanings]) => [key, [...meanings][0]]));
+}
 export async function itemDetail(kind: Kind, id: string) {
   if (!isUuid(id)) return null;
   const item = await db.item.findFirst({ where: { id, kind, status: 'approved' }, select: {
@@ -58,7 +98,8 @@ export async function itemDetail(kind: Kind, id: string) {
   const kanjiInWord = item.vocabulary ? await db.kanji.findMany({where:{glyph:{in:[...new Set(Array.from(item.vocabulary.writtenForm))].slice(0,24)},item:{status:'approved'}},select:{itemId:true,glyph:true,meaningsJson:true},take:24}) : [];
   // Exact stored glyph matches are display aids; this does not create canonical relationships.
   const linkedKanji = [...new Map([...(item.vocabulary?.kanjiLinks.map(l=>l.kanji)||[]),...kanjiInWord].map(k=>[k.itemId,k])).values()];
-  return { ...item, sourceEntries, linkedKanji };
+  const exampleMeanings = item.kind === 'kanji' ? await exampleWordMeanings(item.contentLinks.map(link => link.content)) : {};
+  return { ...item, sourceEntries, linkedKanji, exampleMeanings };
 }
 export function isUuid(id: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id); }
 export async function itemNeighbors(kind:Kind,id:string,createdAt:Date) {
