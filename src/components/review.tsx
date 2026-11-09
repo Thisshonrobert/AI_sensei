@@ -15,13 +15,19 @@ export function Review({initialStart}:{initialStart?:string}){
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [components,setComponents]=useState<Record<string,boolean>>({});
  const [tick,setTick]=useState(0),[choiceId,setChoiceId]=useState('');
+ const [nextView,setNextView]=useState<SessionView|null>(null);
  const event=useRef<string|null>(null);const heading=useRef<HTMLHeadingElement>(null);
  useEffect(()=>{call<SessionView|null>().then(async saved=>{
   let next=saved;
   if(initialStart&&(!saved||saved.status==='paused'||!saved.card))next=await call<SessionView&{empty?:boolean}>({action:'start'}).then(v=>v.empty?saved:v);
   else if(saved?.status==='active')next=await call<SessionView>({action:'resume',sessionId:saved.sessionId});
   setView(next);event.current=next?.attempt?.clientEventId||null;
- }).catch(e=>setError(e.message)).finally(()=>setLoading(false));},[initialStart]);
+  // A committed-but-unrated response (closed tab, failed save) is graded the same fast way.
+  if(next?.status==='active'&&next.attempt?.grader==='objective')await autoRate(next);
+ }).catch(e=>setError(e.message)).finally(()=>setLoading(false));
+ // One-shot load: autoRate reads fresh state setters and must not re-trigger this effect.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[initialStart]);
  const lastActivity=useRef(0);
  useEffect(()=>{
   const wake=()=>{lastActivity.current=Date.now();};
@@ -34,10 +40,20 @@ export function Review({initialStart}:{initialStart?:string}){
   const timer=setInterval(()=>{if(document.visibilityState==='visible'&&Date.now()-lastActivity.current<15*60*1000)setTick(t=>t+1);},1000);
   return()=>clearInterval(timer);
  },[view?.status,view?.idleTooLong]);
+ useEffect(()=>{
+  if(!nextView)return;
+  const advance=(e:KeyboardEvent)=>{
+   const target=e.target as HTMLElement|null;
+   if(target?.closest('button,a,input,summary,textarea,select'))return;
+   if(e.key===' '||e.key==='Enter'){e.preventDefault();replace(nextView);}
+  };
+  window.addEventListener('keydown',advance);
+  return()=>window.removeEventListener('keydown',advance);
+ },[nextView]);
  const card=view?.card, revealed=view?.answer;
  const vocab=card?.objective==='vocab_reading_meaning';
  async function work(action:()=>Promise<void>){setBusy(true);setError('');try{await action();}catch(e){setError(e instanceof Error?e.message:'Could not save. Retry or resume.');}finally{setBusy(false);}}
- function replace(next:SessionView|null){setTick(0);setChoiceId('');setView(next);event.current=next?.attempt?.clientEventId||null;setComponents({});requestAnimationFrame(()=>heading.current?.focus());}
+ function replace(next:SessionView|null){setTick(0);setChoiceId('');setView(next);setNextView(null);event.current=next?.attempt?.clientEventId||null;setComponents({});requestAnimationFrame(()=>heading.current?.focus());}
  function start(reviewMore=false){return work(async()=>{const next=await call<SessionView&{empty?:boolean}>({action:'start',...(reviewMore?{reviewMore}:{})});if(next.empty){setMessage('Nothing else to review early.');return;}replace(next);setMessage('Session saved.');});}
  function response():ResponseInput {
   if(!view||!card)throw new Error('Reload the session');
@@ -46,7 +62,25 @@ export function Review({initialStart}:{initialStart?:string}){
   if(!committed)throw new Error('Select one of the offered choices');
   return {sessionId:view.sessionId,cardId:card.id,stateVersion:card.stateVersion,clientEventId:event.current,answer:committed};
  }
- function submit(){return work(async()=>{const payload=response();const result=await call<{view:SessionView}>({action:'respond',...payload});replace(result.view);setMessage('Response committed.');});}
+ function answerOf(v:SessionView):ResponseInput {
+  const committed=v.attempt?.answer,clientEventId=v.attempt?.clientEventId;
+  if(!v.card||!committed||!clientEventId)throw new Error('Commit and reveal the response first');
+  return {sessionId:v.sessionId,cardId:v.card.id,stateVersion:v.card.stateVersion,clientEventId,answer:committed};
+ }
+ function isCorrect(v:SessionView){
+  const feedback=v.attempt?.components||{};
+  return v.card?.objective==='vocab_reading_meaning'?!!(feedback.readingCorrect&&feedback.meaningCorrect):!!feedback.correct;
+ }
+ // Fast recall: the committed choice is the rating. Correct → Good and straight on;
+ // wrong → Again, with the answer kept on screen until one key/tap continues.
+ async function autoRate(committed:SessionView){
+  const correct=isCorrect(committed);
+  const result=await call<{view:SessionView}>({action:'rate',...answerOf(committed),rating:correct?3:1,components:{}});
+  if(correct){replace(result.view);setMessage('Correct · Good · next card');return;}
+  setTick(0);setChoiceId('');setComponents({});event.current=null;
+  setView(committed);setNextView(result.view);setMessage('Wrong · Again · read the answer, then press Space.');
+ }
+ function submit(){return work(async()=>{const payload=response();const result=await call<{view:SessionView}>({action:'respond',...payload});if(result.view.attempt?.grader==='objective'){await autoRate(result.view);return;}replace(result.view);setMessage('Response committed.');});}
  function rate(rating:number){return work(async()=>{const objectiveAttempt=view?.attempt?.grader==='objective';const result=await call<{rating:number;view:SessionView}>({action:'rate',...response(),rating,components:objectiveAttempt?{}:vocab?{readingCorrect:!!components.readingCorrect,meaningCorrect:!!components.meaningCorrect}:{correct:!!components.correct}});replace(result.view);setMessage(`Saved · ${['','Again','Hard','Good','Easy'][result.rating]}`);});}
  if(loading)return <p role="status">Loading saved session…</p>;
  const paused=view?.status==='paused';
@@ -75,7 +109,7 @@ export function Review({initialStart}:{initialStart?:string}){
       <p className="muted">{paired?'One option pairs the source-backed reading with its meaning.':'Exactly one option is source-backed.'}</p>
       <button disabled={busy||!choiceId}>Commit choice and reveal</button>
     </form>}
-   {revealed&&<><div className="answer-comparison"><div className="committed-answer"><h2>Your committed response</h2>{objective&&view!.attempt!.choice?<p><span className="field-label">Selected: </span>{view!.attempt!.choice.reading||view!.attempt!.choice.meaning}{view!.attempt!.choice.reading&&view!.attempt!.choice.meaning?' · ':''}{view!.attempt!.choice.meaning||''}</p>:Object.entries(view!.attempt!.answer).filter(([,x])=>typeof x==='string').map(([key,v])=><p key={key}><span className="field-label">{key}: </span>{v}</p>)}</div><AnswerView answer={revealed}/></div>{!objective&&<fieldset className="self-assessment" disabled={busy}><legend>What did you recall unaided?</legend>{(vocab?[['readingCorrect','Reading recalled correctly'],['meaningCorrect','Meaning recalled correctly']]:[['correct','Objective recalled correctly']]).map(([key,label])=><label key={key}><input type="checkbox" checked={!!components[key]} onChange={e=>setComponents({...components,[key]:e.target.checked})}/>{label}</label>)}</fieldset>}{objective&&<p className="notice" data-testid="objective-feedback">{feedback?.correct?(vocab?'Both components correct.':'Correct.'):vocab&&feedback?.readingCorrect?'Reading correct, meaning different. This is Again.':vocab&&feedback?.meaningCorrect?'Meaning correct, reading different. This is Again.':vocab?'Both components incorrect. This is Again.':'The selected answer is incorrect. This is Again.'}</p>}{!objective&&<p className="muted">Equivalent meaning paraphrases are valid. Failure of either required part means Again.</p>}<div className="review-actions ratings">{['Again','Hard','Good','Easy'].map((label,i)=><button key={label} aria-label={label} disabled={busy||(i>0&&!success)||(objective&&i===3)} onClick={()=>rate(i+1)}>{label}<small>{['Forgot','Difficult','Recalled','Effortless'][i]}</small></button>)}</div>{view?.study&&<details className="study-details"><summary>Read this card</summary><StudyBack study={view.study}/></details>}</>}
+   {revealed&&<><div className="answer-comparison"><div className="committed-answer"><h2>Your committed response</h2>{objective&&view!.attempt!.choice?<p><span className="field-label">Selected: </span>{view!.attempt!.choice.reading||view!.attempt!.choice.meaning}{view!.attempt!.choice.reading&&view!.attempt!.choice.meaning?' · ':''}{view!.attempt!.choice.meaning||''}</p>:Object.entries(view!.attempt!.answer).filter(([,x])=>typeof x==='string').map(([key,v])=><p key={key}><span className="field-label">{key}: </span>{v}</p>)}</div><AnswerView answer={revealed}/></div>{!objective&&<fieldset className="self-assessment" disabled={busy}><legend>What did you recall unaided?</legend>{(vocab?[['readingCorrect','Reading recalled correctly'],['meaningCorrect','Meaning recalled correctly']]:[['correct','Objective recalled correctly']]).map(([key,label])=><label key={key}><input type="checkbox" checked={!!components[key]} onChange={e=>setComponents({...components,[key]:e.target.checked})}/>{label}</label>)}</fieldset>}{objective&&<p className="notice" data-testid="objective-feedback">{feedback?.correct?(vocab?'Both components correct.':'Correct.'):vocab&&feedback?.readingCorrect?'Reading correct, meaning different. This is Again.':vocab&&feedback?.meaningCorrect?'Meaning correct, reading different. This is Again.':vocab?'Both components incorrect. This is Again.':'The selected answer is incorrect. This is Again.'}</p>}{!objective&&<p className="muted">Equivalent meaning paraphrases are valid. Failure of either required part means Again.</p>}{nextView&&<div className="review-actions"><button aria-label="Next card" disabled={busy} onClick={()=>replace(nextView)}>Next card<small>Space or Enter</small></button></div>}{(!objective||(!!view?.attempt&&!nextView&&!!error))&&<div className="review-actions ratings">{['Again','Hard','Good','Easy'].map((label,i)=><button key={label} aria-label={label} disabled={busy||(i>0&&!success)||(objective&&i===3)} onClick={()=>rate(i+1)}>{label}<small>{['Forgot','Difficult','Recalled','Effortless'][i]}</small></button>)}</div>}{view?.study&&<details className="study-details"><summary>Read this card</summary><StudyBack study={view.study}/></details>}</>}
   </article>}
   <Dictionary itemId={card?.itemId} disabled={!revealed}/>
  </section>;

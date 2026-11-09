@@ -24,7 +24,7 @@ test('flexible completion on all detail pages and daily caps persist on mobile a
 });
 
 // The review browser runner uses an isolated, synthetic database. Never write learner events in the real library.
-test('new card opens the recall choice first, then reveal, rating and an optional study card; committed choice survives stop, reload and resume', async({page,request})=>{
+test('a committed choice is its own rating: correct advances silently as Good, wrong reveals the answer as Again and one key continues', async({page,request})=>{
  test.skip(!process.env.REVIEW_BROWSER_TEST, 'Requires isolated review browser runner');
  const denied=await request.post('/api/review',{headers:{Origin:'https://example.org'},data:{action:'start'}});
  expect(denied.status()).toBe(403);
@@ -51,37 +51,41 @@ test('new card opens the recall choice first, then reveal, rating and an optiona
  await page.locator('.recall-choices input').first().focus();
  await page.keyboard.press('1');
  await expect(page.locator('.recall-choices input').first()).toBeChecked();
- const chosen=choices.first();
- const chosenReading=await chosen.getAttribute('data-reading');
- const chosenMeaning=await chosen.getAttribute('data-meaning');
  await page.getByRole('button',{name:'Commit choice and reveal'}).click();
- await expect(page.getByTestId('revealed-answer')).toBeVisible();
- const revealed=page.getByTestId('revealed-answer');
- const reading=await revealed.locator('[data-field="reading"]').innerText();
- const meaning=await revealed.locator('[data-field="meaning"]').innerText();
- const bothCorrect=reading===chosenReading&&meaning===chosenMeaning;
- await expect(page.getByTestId('objective-feedback')).toContainText(bothCorrect?'Both components correct':'Again');
- await expect(page.getByRole('button',{name:'Good',exact:true})).toBeEnabled({enabled:bothCorrect});
- await expect(page.getByRole('button',{name:'Easy',exact:true})).toBeDisabled();
- // The extra study reference is optional and starts collapsed.
- const studyReference=page.locator('.study-details');
- await expect(studyReference).toHaveCount(1);
- await expect(studyReference).not.toHaveAttribute('open','');
- await studyReference.locator('summary').click();
- await expect(studyReference).toHaveAttribute('open','');
- await page.waitForLoadState('networkidle');await page.screenshot({path:'.local/review-desktop.png',fullPage:true});
+ // The choice itself is the rating: Good on a correct pick, Again on a wrong one.
+ await expect(page.getByRole('status')).toContainText(/Correct · Good|Wrong · Again/);
+ const choseWrong=await page.getByTestId('revealed-answer').count()>0;
+ if(choseWrong){
+  const revealed=page.getByTestId('revealed-answer');
+  await expect(revealed).toBeVisible();
+  await expect(page.getByTestId('objective-feedback')).toContainText('Again');
+  // No memory-level buttons: the server already forced Again, so only the answer is offered.
+  await expect(page.getByRole('button',{name:'Good',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Easy',exact:true})).toHaveCount(0);
+  // The extra study reference is optional and starts collapsed.
+  const studyReference=page.locator('.study-details');
+  await expect(studyReference).toHaveCount(1);
+  await expect(studyReference).not.toHaveAttribute('open','');
+  await studyReference.locator('summary').click();
+  await expect(studyReference).toHaveAttribute('open','');
+  await page.waitForLoadState('networkidle');await page.screenshot({path:'.local/review-desktop.png',fullPage:true});
+  await page.getByRole('button',{name:'Next card',exact:true}).click();
+ }else{
+  // Correct: the answer is not shown and the next card is already up.
+  await expect(page.getByTestId('revealed-answer')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Good',exact:true})).toHaveCount(0);
+ }
+ // The choice and its rating were saved by the same gesture, so a reload shows the next card.
+ await expect(page.locator('.recall-choices label')).toHaveCount(4);
+ const upNext=await page.locator('.item-title').innerText();
  await page.reload();
- await expect(page.getByTestId('revealed-answer')).toBeVisible();
- await expect(page.locator('.committed-answer')).toContainText(chosenReading!);
- await expect(page.getByTestId('objective-feedback')).toBeVisible();
+ await expect(page.getByTestId('revealed-answer')).toHaveCount(0);
+ await expect(page.locator('.item-title')).toHaveText(upNext);
  await page.getByRole('button',{name:'Stop and save'}).click();
  await page.reload();
  await page.getByRole('button',{name:'Resume reviews'}).click();
- await expect(page.getByTestId('revealed-answer')).toBeVisible();
- await expect(page.locator('.committed-answer')).toContainText(chosenReading!);
- await page.getByRole('button',{name:bothCorrect?'Good':'Again',exact:true}).click();
- await expect(page.getByRole('status')).toContainText('Saved');
- // Second card: learn its answer through the retained introduce endpoint, then deliberately choose a wrong option; only Again remains.
+ await expect(page.locator('.recall-choices label')).toHaveCount(4);
+ // Second card: learn its answer through the retained introduce endpoint, then deliberately choose a wrong option.
  const introduced=await page.evaluate(async()=>{
   const view=await (await fetch('/api/review',{cache:'no-store'})).json();
   const result=await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'introduce',sessionId:view.sessionId,cardId:view.card.id})});
@@ -100,11 +104,12 @@ test('new card opens the recall choice first, then reveal, rating and an optiona
  expect(wrong).toBeGreaterThanOrEqual(0);
  await secondLabels.nth(wrong).click();
  await page.getByRole('button',{name:'Commit choice and reveal'}).click();
+ await expect(page.getByRole('status')).toContainText('Wrong · Again');
  await expect(page.getByTestId('objective-feedback')).toContainText('Again');
- await expect(page.getByRole('button',{name:'Good',exact:true})).toBeDisabled();
- await expect(page.getByRole('button',{name:'Easy',exact:true})).toBeDisabled();
- await page.getByRole('button',{name:'Again',exact:true}).click();
- await expect(page.getByRole('status')).toContainText('Saved · Again');
+ await expect(page.getByRole('button',{name:'Again',exact:true})).toHaveCount(0);
+ // Body focus after the form unmounts: a single Space continues without touching the mouse.
+ await page.keyboard.press('Space');
+ await expect(page.getByTestId('revealed-answer')).toHaveCount(0);
  // The missed card returns once at the end of this session, labelled Again. Answer the rest (Again) through the API.
  const returned=await page.evaluate(async()=>{
   const call=async(body?:unknown)=>(await fetch('/api/review',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'})).json();
@@ -182,13 +187,15 @@ test('match round: tap word then meaning, one deliberate miss adds a second, thi
    let answer:unknown;
    if(view.attempt){Object.assign(base,{clientEventId:view.attempt.clientEventId});answer=view.attempt.answer;}
    else{
-    let intro:{answer:{reading:string;meaning:string}}|null=null;
+    // Learn the answer for this exact card so the synthetic setup always picks the correct option,
+    // even when earlier browser specs already advanced the shared session past its new cards.
+    const intro:{answer:{reading?:string;meaning?:string;response?:string}}|null=await (await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'introduce',sessionId:view.sessionId,cardId:view.card.id})})).json();
     if(view.card.role==='new'){
-     intro=await (await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'introduce',sessionId:view.sessionId,cardId:view.card.id})})).json();
      view=await call();base={sessionId:view.sessionId,cardId:view.card.id,stateVersion:view.card.stateVersion,clientEventId:crypto.randomUUID()};
     }
     if(!view.recall)throw new Error('No choices: '+JSON.stringify({o:view.card.objective,r:view.card.role,a:!!view.attempt,g:view.optionGaps}));
-    const pick=(intro&&view.recall.choices.find((c:{reading?:string;meaning?:string})=>c.reading===intro.answer.reading&&c.meaning===intro.answer.meaning))||view.recall.choices[0];
+    const target=intro?.answer||{};
+    const pick=view.recall.choices.find((c:{reading?:string;meaning?:string})=>!!c.reading&&((!!target.reading&&c.reading===target.reading&&(!c.meaning||!target.meaning||c.meaning===target.meaning))||(!!target.response&&c.reading===target.response)))||view.recall.choices[0];
     answer={choiceId:pick.id,choiceFingerprint:view.recall.fingerprint};
     await call({action:'respond',...base,answer});
    }
