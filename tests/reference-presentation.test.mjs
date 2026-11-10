@@ -57,3 +57,17 @@ test('a draft JMdict word meaning fills the matching book example and is not sho
  const rows=referencePresentation([book,draft]);
  assert.deepEqual(rows.map(r=>r.content.id),['book']);assert.equal(rows[0].supplement.id,'draft');
 });
+test('a draft word meaning and an approved supplement with the same meaning merge into one approved supplement',()=>{
+ const book=c('book','sentence',{japanese:'飾り',reading:'かざり',translation:null});
+ const draft=c('draft','explanation',{kind:'dictionaryWordMeaning',originalJapanese:'飾り',reading:'かざり',selectedMeanings:['decoration','ornament']},'draft');
+ const approved=c('sup','explanation',{kind:'dictionaryFieldSupplement',originalJapanese:'飾り',reading:'かざり',selectedMeanings:['decoration','ornament']});
+ const rows=referencePresentation([book,draft,approved]);
+ assert.deepEqual(rows.map(r=>r.content.id),['book']);assert.equal(rows[0].supplement.id,'sup');
+});
+test('an approved supplement outranks a draft word meaning with a different sense',()=>{
+ const book=c('book','sentence',{japanese:'吹く',reading:'ふく',translation:null});
+ const draft=c('draft','explanation',{kind:'dictionaryWordMeaning',originalJapanese:'吹く',reading:'ふく',selectedMeanings:['to breathe out']},'draft');
+ const approved=c('sup','explanation',{kind:'dictionaryFieldSupplement',originalJapanese:'吹く',selectedMeanings:['to blow (of the wind)'],dictionaryEvidence:{originalReading:'ふく'}});
+ const rows=referencePresentation([book,draft,approved]);
+ assert.deepEqual(rows.map(r=>r.content.id),['book']);assert.equal(rows[0].supplement.id,'sup');
+});

@@ -19,7 +19,12 @@ export function referencePresentation(contents){
    const example=examples.find(c=>reading(c.payloadJson)&&meaning(c.payloadJson))||examples.find(c=>reading(c.payloadJson))||examples.find(c=>meaning(c.payloadJson))||null;
    const matches=sameJapanese.filter(c=>c.payloadJson.kind!=='exampleLanguage'&&meaning(c.payloadJson)&&reading(c.payloadJson)&&(!resolvedReading||reading(c.payloadJson)===resolvedReading));
    if(example){supplement=example;resolvedReading ||= reading(example.payloadJson);}
-   else if(matches.length===1){supplement=matches[0];resolvedReading ||= reading(supplement.payloadJson);consumed.add(supplement.id);}
+   // An approved meaning outranks draft JMdict lookups of the same word; the drafts are hidden, not shown as extra boxes.
+   // Remaining candidates must agree on one meaning, otherwise they stay separate for an explicit decision.
+   else if(matches.length){
+    const approved=matches.filter(c=>c.status==='approved'),pool=approved.length?approved:matches;
+    if(new Set(pool.map(c=>meaning(c.payloadJson))).size===1){supplement=pool[0];resolvedReading ||= reading(supplement.payloadJson);matches.forEach(c=>consumed.add(c.id));}
+   }
   }
   return {content,reading:resolvedReading,supplement};
  });
