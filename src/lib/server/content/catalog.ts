@@ -45,6 +45,26 @@ export async function listItems(kind: Kind, input: {page?: string; query?: strin
   const contextCount=kind==='vocabulary'?await db.item.count({where:{...where,sourceEntries:{some:{curriculumRole:'context_reference',successor:null}}}}):0;
   return { items, count, contextCount, ...paging };
 }
+// Items the learner has marked studied at least once (introducedAt is set once and never cleared).
+export async function studiedIds(userId: string, ids: readonly string[]) {
+  if (!ids.length) return new Set<string>();
+  const rows = await db.userItem.findMany({ where: { userId, itemId: { in: [...ids] }, introducedAt: { not: null } }, select: { itemId: true } });
+  return new Set(rows.map(row => row.itemId));
+}
+// Dashboard "resume": the list page and entry right after the most recently studied one, in list order.
+export async function resumeHref(kind: Kind, userId: string) {
+  const last = await db.userItem.findFirst({ where: { userId, introducedAt: { not: null }, item: { kind, status: 'approved' } }, orderBy: { introducedAt: 'desc' }, select: { item: { select: { id: true, createdAt: true } } } });
+  if (!last) return `/${kind}`;
+  const where = { kind, status: 'approved' } as const;
+  const { id, createdAt } = last.item;
+  const [before, total] = await Promise.all([
+    db.item.count({ where: { ...where, OR: [{ createdAt: { lt: createdAt } }, { createdAt, id: { lt: id } }] } }),
+    db.item.count({ where }),
+  ]);
+  const index = Math.min(before + 1, total - 1);
+  const next = await db.item.findFirst({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: index, select: { id: true } });
+  return next ? `/${kind}?page=${Math.floor(index / 50) + 1}#item-${next.id}` : `/${kind}`;
+}
 const jsonText = (value: Prisma.JsonValue | undefined) => typeof value === 'string' ? value.trim() : '';
 const wordKey = (writtenForm: string, reading: string) => `${writtenForm}\u0000${reading}`;
 // A kanji card's example words reuse an approved vocabulary record with the same written form

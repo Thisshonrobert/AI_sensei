@@ -43,6 +43,7 @@ p { line-height: 1.7; margin: .65rem 0; overflow-wrap: anywhere; }
 .entry-list { list-style: decimal; padding-left: 2.5rem; }
 .entry-list li { border-top: 1px solid #cdd0c3; }
 .entry-link { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; align-items: baseline; gap: 1rem; padding: .9rem .3rem; color: #252923; text-decoration: none; }
+.entry-link { position: relative; }.studied-tick { position: absolute; right: .6rem; top: .8rem; color: #2e7d32; font-weight: 700; font-size: 1.2rem; }.entry-list li:target .entry-link { background: #edeedd; }
 .entry-link:hover { background: #edeedd; }.entry-link .japanese { font-size: 1.5rem; }.entry-link > span:last-child { color: #505c4d; overflow-wrap: anywhere; }.reading { color: #505c4d; }
 .pagination { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; font-size: .85rem; }
 /* Big side arrows so the next page is reachable without scrolling to the bottom. */

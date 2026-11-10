@@ -12,8 +12,8 @@ export function text(value: Prisma.JsonValue | undefined) {
 }
 export function name(item: CatalogItem) { return item.vocabulary?.writtenForm || item.kanji?.glyph || item.grammar?.pattern || 'Missing title'; }
 export function summary(item: CatalogItem, meaning?: string) { return meaning || item.vocabulary?.meaningEn || text(item.kanji?.meaningsJson) || item.grammar?.explanationJa || 'Not supplied'; }
-export function ItemLink({item, meaning}: {item: CatalogItem; meaning?: string}) {
-  return <Link data-item-link href={`/${item.kind}/${item.id}`} className="entry-link"><span lang="ja" className="japanese">{name(item)}</span><span>{item.vocabulary?.reading && <span lang="ja" className="reading">{item.vocabulary.reading} · </span>}{summary(item, meaning)}</span></Link>;
+export function ItemLink({item, meaning, studied}: {item: CatalogItem; meaning?: string; studied?: boolean}) {
+  return <Link data-item-link href={`/${item.kind}/${item.id}`} className="entry-link">{studied && <span className="studied-tick" role="img" aria-label="Studied" title="Studied">✓</span>}<span lang="ja" className="japanese">{name(item)}</span><span>{item.vocabulary?.reading && <span lang="ja" className="reading">{item.vocabulary.reading} · </span>}{summary(item, meaning)}</span></Link>;
 }
 export function Origin({origin, dictionary = false}: {origin: string; dictionary?: boolean}) {
   if(dictionary)return null;
